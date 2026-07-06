@@ -43,12 +43,7 @@ Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (
 
 
 #### todo 
-- dark condition - struggle to identify, use flashlight
 
-- Cache metadata of image 
-    - Finally, when i pick my photo, back out of the recipes page, then click on "find recipes" again, it calls an image analysis api all over again - make sure to cache photos using the metadata as some kkind of UID - make sure to save it into the database so we dont need to a new API everytime
-- word embedding or improved ingreident identifcaiton to reuse past recipes
-- reloading new recipes using a scrolling down function?
 
 ### Tradeoffs
 - recipe generating 30 at once takes a long time even with sonnet 4.6. These are also predetermined genres of food. Instead let us generate around 10, upon refresh then we will generate 20. This will slow down UI, but the intial image analysis (which includes generating the recipe) should be reduced signcantly (currently all front loading takes around 1-1.5m)
@@ -68,7 +63,9 @@ Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (
 - Considered tinder style swipe out of better UI, but primarily minimizing feel of latency when loading new recipes, however original steps require 5 cards at a time and 5 new cards for renewal
 - generating detailed recipes after clicking to prevent upfront latency and unneccessary tokens
 - unable to generate a lot of new unsplash images - so instead searched by cuisine tags w/ repeated images
+- not using streaming of text to reduce feel of AI at the tradeoff of latency
 
 ????
 - can i use third party API to generate recipes or is that againt the assignment - would save time, money, and image relevancy while primarily reducing latency
 - 
+

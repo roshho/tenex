@@ -31,6 +31,26 @@ export const RecipeSchema = z.object({
   ingredients: z.array(IngredientSchema),
 });
 
+// Returns several ranked candidates (not just the top hit) so callers can skip past a
+// duplicate/already-used image instead of being stuck with whatever ranks #1.
+async function searchPixabayCandidates(query: string, count = 5): Promise<string[]> {
+  const key = process.env.PIXABAY_API_KEY;
+  if (!key) return []; // not configured — fall through to Unsplash
+  try {
+    const res = await fetch(
+      `https://pixabay.com/api/?key=${key}&q=${encodeURIComponent(query)}&image_type=photo&category=food&safesearch=true&per_page=${count}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return []; // Pixabay returns a plain-text error string, not JSON, on failure
+    const data = await res.json() as { hits?: { largeImageURL?: string; webformatURL?: string }[] };
+    return (data.hits ?? [])
+      .map(h => h.largeImageURL ?? h.webformatURL)
+      .filter((u): u is string => !!u);
+  } catch {
+    return [];
+  }
+}
+
 async function searchUnsplash(query: string): Promise<string | null> {
   try {
     const res = await fetch(
@@ -47,36 +67,88 @@ async function searchUnsplash(query: string): Promise<string | null> {
   }
 }
 
-// This project's Unsplash app is on the Demo tier: capped at 50 requests/HOUR. A single
-// 20-recipe scan already blows past that if every recipe does its own search — let alone
-// a per-title search plus fallbacks. So this searches by CUISINE, not by exact title, and
-// caches the result at module scope (persists across invocations on a warm serverless
-// instance) — at most 10 Unsplash calls ever get made (one per cuisine), no matter how many
-// recipes or scans happen. Trade-off: recipes sharing a cuisine share the same photo rather
-// than each getting a unique one — worth revisiting if the Unsplash app is ever approved for
-// production use, which lifts the rate cap.
-const genreImageCache = new Map<string, Promise<string | null>>();
+// Pixabay's free tier has a far more generous rate limit than Unsplash's Demo-tier
+// 50/HOUR, so it's the primary source and can afford a per-recipe-title search again
+// instead of sharing one generic photo per cuisine. Falls back to a cuisine-level Pixabay
+// query if the specific title has no match, and only drops to Unsplash — cached by genre,
+// same tight-budget treatment as before — if Pixabay is unavailable entirely.
+const unsplashGenreCache = new Map<string, Promise<string | null>>();
 
-export function fetchUnsplashImage(genre: string): Promise<string | null> {
-  if (!genreImageCache.has(genre)) {
-    genreImageCache.set(genre, searchUnsplash(`${genre} food`));
+function fetchUnsplashFallback(genre: string): Promise<string | null> {
+  if (!unsplashGenreCache.has(genre)) {
+    unsplashGenreCache.set(genre, searchUnsplash(`${genre} food`));
   }
-  return genreImageCache.get(genre)!;
+  return unsplashGenreCache.get(genre)!;
+}
+
+function pickUnused(candidates: string[], used: Set<string>): string | null {
+  return candidates.find(url => !used.has(url)) ?? candidates[0] ?? null;
+}
+
+/**
+ * Resolves one image per recipe, avoiding repeats against `alreadyUsed` (images already
+ * persisted for this ingredient set) and against each other within this same batch.
+ * Phase 1 runs every recipe's title search in parallel — the fast path, since most
+ * recipes get a distinct hit here. Phase 2 only runs (sequentially, since each pick
+ * affects what the next one should avoid) for the recipes that came up empty or
+ * collided with something already claimed — normally a small minority.
+ */
+export async function fetchRecipeImages(
+  recipes: { title: string; genre: string }[],
+  alreadyUsed: Iterable<string> = []
+): Promise<(string | null)[]> {
+  // "X dish"/"X food dish" rather than the bare title/cuisine — nudges Pixabay's broad
+  // "food" category toward plated/cooked photography instead of raw-ingredient shots.
+  const titleCandidates = await Promise.all(
+    recipes.map(r => searchPixabayCandidates(`${r.title} dish`))
+  );
+
+  const used = new Set(alreadyUsed);
+  const results: (string | null)[] = [];
+
+  for (let i = 0; i < recipes.length; i++) {
+    let picked = pickUnused(titleCandidates[i], used);
+
+    if (!picked) {
+      const genreCandidates = await searchPixabayCandidates(`${recipes[i].genre} food dish`);
+      picked = pickUnused(genreCandidates, used);
+    }
+    if (!picked) {
+      picked = await fetchUnsplashFallback(recipes[i].genre);
+    }
+
+    if (picked) used.add(picked);
+    results.push(picked);
+  }
+
+  return results;
 }
 
 /**
  * Persists newly generated recipes under an existing ingredient set: inserts `recipes`
  * (with steps/tips left null — those are generated lazily on first detail view) and
- * `recipe_ingredients`, fetching an Unsplash image and an embedding (title + description,
- * used later for diversity checks) per recipe along the way.
+ * `recipe_ingredients`, fetching an image and an embedding (title + description, used
+ * later for diversity checks) per recipe along the way.
  */
 export async function persistRecipes(
   supabase: SupabaseClient,
   ingredientSetId: string,
   recipes: z.infer<typeof RecipeSchema>[]
 ): Promise<RecipeStub[]> {
+  // Avoid handing out an image that's already shown elsewhere in this ingredient set —
+  // not just within this batch, since top-ups/genre fetches add more recipes to the
+  // same set later and shouldn't repeat what's already been persisted for it.
+  const { data: existingImageRows } = await supabase
+    .from('recipes')
+    .select('image_url')
+    .eq('ingredient_set_id', ingredientSetId)
+    .not('image_url', 'is', null);
+  const alreadyUsedImages = (existingImageRows ?? [])
+    .map(r => r.image_url as string | null)
+    .filter((u): u is string => !!u);
+
   const [imageUrls, embeddings] = await Promise.all([
-    Promise.all(recipes.map(r => fetchUnsplashImage(r.genre))),
+    fetchRecipeImages(recipes, alreadyUsedImages),
     embedTexts(recipes.map(r => `${r.title}. ${r.description}`)),
   ]);
 

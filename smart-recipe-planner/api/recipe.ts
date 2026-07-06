@@ -18,6 +18,15 @@ const RecipeDetailSchema = z.object({
   tips: z.string().nullable(),
 });
 
+// Applied at read time (not just after generation) so it also retroactively fixes
+// recipes that were already persisted with numbering/blank entries from before this
+// prompt fix — no DB migration needed, this is just an output-side transformation.
+function cleanSteps(steps: string[]): string[] {
+  return steps
+    .map(s => s.replace(/^\s*(?:step\s*)?\d+[.):]\s*/i, '').trim())
+    .filter(s => s.length > 0);
+}
+
 async function generateStepsWithFallback(context: {
   title: string;
   description: string;
@@ -31,7 +40,10 @@ Cuisine: ${context.genre}
 Description: ${context.description}
 Ingredients: ${context.ingredients.map(i => `${i.quantity}${i.unit ? ' ' + i.unit : ''} ${i.name}`).join(', ')}
 
-Write clear, numbered steps (at least 3) a home cook can follow, plus an optional chef's tip.
+Write at least 3 clear steps a home cook can follow, plus an optional chef's tip.
+Each step is its own array entry — do NOT prefix steps with numbers, "Step 1:", bullets,
+or any other label, and do NOT include blank or placeholder entries. The app numbers and
+displays each step itself, so just the plain instruction sentence(s) for that step.
 Return structured JSON.`;
 
   try {
@@ -102,6 +114,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({ error: 'Failed to generate recipe instructions' });
     }
   }
+
+  steps = cleanSteps(steps);
 
   return res.status(200).json({
     id: recipe.id,
