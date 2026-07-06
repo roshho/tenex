@@ -13,15 +13,21 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList } from '../types';
 import { fetchFullRecipe } from '../lib/api';
-import { colors, spacing, radius, typography } from '../constants/theme';
+import { colors, spacing, radius, typography, shadows } from '../constants/theme';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'RecipeDetail'>;
   route: RouteProp<RootStackParamList, 'RecipeDetail'>;
 };
 
+const difficultyColor = {
+  Easy: colors.primary,
+  Medium: colors.accent,
+  Hard: colors.error,
+};
+
 export default function RecipeDetailScreen({ navigation, route }: Props) {
-  const { recipeId } = route.params;
+  const { recipeId, title: stubTitle } = route.params;
 
   const { data: recipe, isLoading, isError, refetch } = useQuery({
     queryKey: ['recipe', recipeId],
@@ -32,7 +38,8 @@ export default function RecipeDetailScreen({ navigation, route }: Props) {
   if (isLoading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingTitle} numberOfLines={2}>{stubTitle}</Text>
+        <ActivityIndicator size="large" color={colors.primary} style={styles.loadingSpinner} />
         <Text style={styles.loadingText}>Building your recipe…</Text>
       </View>
     );
@@ -42,7 +49,7 @@ export default function RecipeDetailScreen({ navigation, route }: Props) {
     return (
       <View style={styles.centered}>
         <Text style={styles.errorText}>Could not load recipe.</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()} activeOpacity={0.9}>
           <Text style={styles.retryButtonText}>Try Again</Text>
         </TouchableOpacity>
       </View>
@@ -51,7 +58,21 @@ export default function RecipeDetailScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      {recipe.imageUrl && <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />}
+      <View style={styles.heroWrap}>
+        {recipe.imageUrl ? (
+          <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />
+        ) : (
+          <View style={[styles.heroImage, styles.heroFallback]} />
+        )}
+        <View style={styles.heroCuisineChip}>
+          <Text style={styles.heroCuisineChipText}>{recipe.cuisine}</Text>
+        </View>
+        <View style={styles.heroDifficultyChip}>
+          <Text style={[styles.heroDifficultyChipText, { color: difficultyColor[recipe.difficulty] }]}>
+            {recipe.difficulty}
+          </Text>
+        </View>
+      </View>
 
       {/* Header */}
       <View style={styles.header}>
@@ -64,7 +85,6 @@ export default function RecipeDetailScreen({ navigation, route }: Props) {
         <MetaTile label="Prep" value={`${recipe.prepTime}m`} />
         <MetaTile label="Cook" value={`${recipe.cookTime}m`} />
         <MetaTile label="Serves" value={String(recipe.servings)} />
-        <MetaTile label="Level" value={recipe.difficulty} />
       </View>
 
       {/* Ingredients */}
@@ -131,17 +151,60 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: spacing.xxl,
   },
+  heroWrap: {
+    position: 'relative',
+  },
   heroImage: {
     width: '100%',
-    height: 220,
+    height: 260,
     backgroundColor: colors.surfaceAlt,
+  },
+  heroFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCuisineChip: {
+    position: 'absolute',
+    left: spacing.md,
+    bottom: spacing.md,
+    backgroundColor: colors.scrimStrong,
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+  },
+  heroCuisineChipText: {
+    ...typography.eyebrow,
+    color: colors.white,
+    letterSpacing: 0.4,
+  },
+  heroDifficultyChip: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: spacing.md,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    paddingHorizontal: spacing.sm + 2,
+    paddingVertical: 5,
+    borderRadius: radius.full,
+  },
+  heroDifficultyChipText: {
+    ...typography.label,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.md,
+    gap: spacing.sm,
     backgroundColor: colors.background,
+    padding: spacing.xl,
+  },
+  loadingTitle: {
+    ...typography.h3,
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  loadingSpinner: {
+    marginTop: spacing.sm,
   },
   loadingText: {
     ...typography.body,
@@ -156,6 +219,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.primary,
     borderRadius: radius.md,
+    ...shadows.sm,
   },
   retryButtonText: {
     ...typography.body,
@@ -181,12 +245,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surface,
+    ...shadows.sm,
   },
   metaTile: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
     borderRightWidth: 1,
     borderRightColor: colors.border,
   },
@@ -201,12 +266,11 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   sectionHeader: {
-    ...typography.label,
+    ...typography.eyebrow,
     color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
     marginHorizontal: spacing.md,
-    marginTop: spacing.lg,
+    marginTop: spacing.xl,
     marginBottom: spacing.sm,
   },
   card: {
@@ -216,6 +280,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+    ...shadows.sm,
   },
   ingredientRow: {
     flexDirection: 'row',

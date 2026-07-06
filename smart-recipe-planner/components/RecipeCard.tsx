@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { RecipeStub } from '../types';
-import { colors, spacing, radius, typography } from '../constants/theme';
+import { colors, spacing, radius, typography, shadows } from '../constants/theme';
 
 interface Props {
   stub: RecipeStub;
@@ -9,55 +9,60 @@ interface Props {
 }
 
 const difficultyColor = {
-  Easy: colors.primaryLight,
+  Easy: colors.primary,
   Medium: colors.accent,
   Hard: colors.error,
 };
 
+const MAX_INGREDIENT_CHIPS = 3;
+
 export default function RecipeCard({ stub, onPress }: Props) {
   const totalTime = stub.prepTime + stub.cookTime;
+  const shownIngredients = stub.matchedIngredients.slice(0, MAX_INGREDIENT_CHIPS);
+  const overflowCount = stub.matchedIngredients.length - shownIngredients.length;
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
-      {stub.imageUrl && <Image source={{ uri: stub.imageUrl }} style={styles.image} />}
-      <View style={styles.top}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={2}>{stub.title}</Text>
-          <View style={[styles.difficultyBadge, { backgroundColor: difficultyColor[stub.difficulty] + '22' }]}>
-            <Text style={[styles.difficultyText, { color: difficultyColor[stub.difficulty] }]}>
-              {stub.difficulty}
-            </Text>
-          </View>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.9}>
+      <View style={styles.imageWrap}>
+        {stub.imageUrl ? (
+          <Image source={{ uri: stub.imageUrl }} style={styles.image} />
+        ) : (
+          <View style={[styles.image, styles.imageFallback]} />
+        )}
+        <View style={styles.cuisineChip}>
+          <Text style={styles.cuisineChipText}>{stub.cuisine}</Text>
         </View>
+        <View style={styles.difficultyChip}>
+          <Text style={[styles.difficultyChipText, { color: difficultyColor[stub.difficulty] }]}>
+            {stub.difficulty}
+          </Text>
+        </View>
+      </View>
+
+      <View style={styles.body}>
+        <Text style={styles.title} numberOfLines={2}>{stub.title}</Text>
         <Text style={styles.description} numberOfLines={2}>{stub.description}</Text>
-      </View>
 
-      <View style={styles.bottom}>
-        <View style={styles.metaGroup}>
-          <Text style={styles.metaValue}>{totalTime}m</Text>
-          <Text style={styles.metaLabel}>total</Text>
+        <View style={styles.metaRow}>
+          <Text style={styles.metaText}>{totalTime} min</Text>
+          <View style={styles.metaDot} />
+          <Text style={styles.metaText}>{stub.servings} servings</Text>
         </View>
-        <View style={styles.divider} />
-        <View style={styles.metaGroup}>
-          <Text style={styles.metaValue}>{stub.servings}</Text>
-          <Text style={styles.metaLabel}>servings</Text>
-        </View>
-        <View style={styles.divider} />
-        <View style={styles.metaGroup}>
-          <Text style={styles.metaValue}>{stub.cuisine}</Text>
-          <Text style={styles.metaLabel}>cuisine</Text>
-        </View>
-        <View style={styles.chevron}>
-          <Text style={styles.chevronText}>›</Text>
-        </View>
-      </View>
 
-      {/* Matched ingredients */}
-      <View style={styles.matchedRow}>
-        <Text style={styles.matchedLabel}>Uses: </Text>
-        <Text style={styles.matchedIngredients} numberOfLines={1}>
-          {stub.matchedIngredients.join(', ')}
-        </Text>
+        {shownIngredients.length > 0 && (
+          <View style={styles.chipsRow}>
+            {shownIngredients.map((ing) => (
+              <View key={ing} style={styles.ingredientChip}>
+                <Text style={styles.ingredientChipText} numberOfLines={1}>{ing}</Text>
+              </View>
+            ))}
+            {overflowCount > 0 && (
+              <View style={styles.ingredientChip}>
+                <Text style={styles.ingredientChipText}>+{overflowCount}</Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -70,90 +75,93 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+    ...shadows.md,
+  },
+  imageWrap: {
+    position: 'relative',
   },
   image: {
     width: '100%',
-    height: 160,
+    height: 180,
     backgroundColor: colors.surfaceAlt,
   },
-  top: {
-    padding: spacing.md,
-    gap: spacing.xs,
+  imageFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
+  cuisineChip: {
+    position: 'absolute',
+    left: spacing.sm,
+    bottom: spacing.sm,
+    backgroundColor: colors.scrimStrong,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  cuisineChipText: {
+    ...typography.eyebrow,
+    color: colors.white,
+    letterSpacing: 0.4,
+  },
+  difficultyChip: {
+    position: 'absolute',
+    right: spacing.sm,
+    top: spacing.sm,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.full,
+  },
+  difficultyChipText: {
+    ...typography.label,
+  },
+  body: {
+    padding: spacing.md,
+    gap: spacing.xs + 2,
   },
   title: {
     ...typography.h3,
     color: colors.text,
-    flex: 1,
-  },
-  difficultyBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: radius.full,
-    flexShrink: 0,
-  },
-  difficultyText: {
-    ...typography.label,
   },
   description: {
     ...typography.bodySmall,
     color: colors.textSecondary,
   },
-  bottom: {
+  metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    marginTop: 2,
+  },
+  metaText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  metaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: radius.full,
+    backgroundColor: colors.textMuted,
+    marginHorizontal: spacing.sm,
+  },
+  chipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  ingredientChip: {
     backgroundColor: colors.surfaceAlt,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.full,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 3,
+    maxWidth: 140,
   },
-  metaGroup: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  metaValue: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  metaLabel: {
+  ingredientChipText: {
     ...typography.caption,
-    color: colors.textMuted,
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    backgroundColor: colors.border,
-  },
-  chevron: {
-    paddingLeft: spacing.sm,
-  },
-  chevronText: {
-    fontSize: 22,
-    color: colors.textMuted,
-  },
-  matchedRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    backgroundColor: colors.primarySurface,
-  },
-  matchedLabel: {
-    ...typography.bodySmall,
-    color: colors.primary,
+    color: colors.textSecondary,
     fontWeight: '600',
-  },
-  matchedIngredients: {
-    ...typography.bodySmall,
-    color: colors.primary,
-    flex: 1,
   },
 });

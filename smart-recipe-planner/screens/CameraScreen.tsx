@@ -17,7 +17,8 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types';
 import { analyzeIngredients } from '../lib/api';
 import { useRecipeStore } from '../store/recipeStore';
-import { colors, spacing, radius, typography } from '../constants/theme';
+import AuraRings from '../components/AuraRings';
+import { colors, spacing, radius, typography, shadows } from '../constants/theme';
 
 type Props = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Camera'>;
@@ -105,14 +106,15 @@ export default function CameraScreen({ navigation }: Props) {
   if (!permission.granted) {
     return (
       <View style={styles.permissionContainer}>
+        <AuraRings size={180} />
         <Text style={styles.permissionTitle}>Camera access needed</Text>
         <Text style={styles.permissionBody}>
           We need your camera to identify ingredients.
         </Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+        <TouchableOpacity style={styles.primaryButton} onPress={requestPermission} activeOpacity={0.9}>
           <Text style={styles.primaryButtonText}>Grant Permission</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handlePickFromLibrary}>
+        <TouchableOpacity style={styles.secondaryButton} onPress={handlePickFromLibrary} activeOpacity={0.8}>
           <Text style={styles.secondaryButtonText}>Pick from Library</Text>
         </TouchableOpacity>
       </View>
@@ -130,10 +132,10 @@ export default function CameraScreen({ navigation }: Props) {
           </View>
         ) : (
           <View style={styles.previewControls}>
-            <TouchableOpacity style={styles.secondaryButton} onPress={handleRetake}>
-              <Text style={styles.secondaryButtonText}>Retake</Text>
+            <TouchableOpacity style={styles.ghostButton} onPress={handleRetake} activeOpacity={0.8}>
+              <Text style={styles.ghostButtonText}>Retake</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.primaryButton} onPress={handleFindRecipes}>
+            <TouchableOpacity style={styles.primaryButtonLarge} onPress={handleFindRecipes} activeOpacity={0.9}>
               <Text style={styles.primaryButtonText}>Find Recipes</Text>
             </TouchableOpacity>
           </View>
@@ -146,18 +148,23 @@ export default function CameraScreen({ navigation }: Props) {
     <View style={styles.container}>
       <CameraView ref={cameraRef} style={styles.camera} facing={'back' as CameraType} enableTorch={torchOn}>
         <View style={styles.cameraOverlay}>
-          <Text style={styles.cameraHint}>Point at your ingredients</Text>
-          <View style={styles.cameraControls}>
-            <TouchableOpacity style={styles.libraryButton} onPress={handlePickFromLibrary}>
-              <Text style={styles.libraryButtonText}>Library</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.captureButton} onPress={handleCapture} />
-            <TouchableOpacity
-              style={[styles.libraryButton, torchOn && styles.torchButtonActive]}
-              onPress={() => setTorchOn(v => !v)}
-            >
-              <Text style={styles.libraryButtonText}>{torchOn ? 'Flash On' : 'Flash Off'}</Text>
-            </TouchableOpacity>
+          <View style={styles.tray}>
+            <Text style={styles.cameraHint}>Point at your ingredients</Text>
+            <View style={styles.cameraControls}>
+              <TouchableOpacity style={styles.trayButton} onPress={handlePickFromLibrary} activeOpacity={0.8}>
+                <Text style={styles.trayButtonText}>Library</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.captureButton} onPress={handleCapture} activeOpacity={0.85} />
+              <TouchableOpacity
+                style={[styles.trayButton, torchOn && styles.trayButtonActive]}
+                onPress={() => setTorchOn(v => !v)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.trayButtonText, torchOn && styles.trayButtonTextActive]}>
+                  {torchOn ? 'Flash On' : 'Flash Off'}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </CameraView>
@@ -176,21 +183,28 @@ const styles = StyleSheet.create({
   cameraOverlay: {
     flex: 1,
     justifyContent: 'flex-end',
-    paddingBottom: spacing.xxl,
-    paddingHorizontal: spacing.lg,
+    padding: spacing.md,
+  },
+  tray: {
+    backgroundColor: colors.scrimStrong,
+    borderRadius: radius.xl,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.md,
+    gap: spacing.md,
   },
   cameraHint: {
-    ...typography.body,
+    ...typography.bodySmall,
     color: colors.white,
     textAlign: 'center',
-    marginBottom: spacing.lg,
-    opacity: 0.8,
+    opacity: 0.85,
   },
   cameraControls: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xl,
+    justifyContent: 'space-between',
   },
   captureButton: {
     width: 72,
@@ -198,27 +212,36 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: colors.white,
     borderWidth: 4,
-    borderColor: 'rgba(255,255,255,0.4)',
+    borderColor: colors.glass,
+    ...shadows.lg,
   },
-  libraryButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  trayButton: {
+    width: 76,
+    paddingVertical: spacing.sm + 2,
+    borderRadius: radius.full,
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+    alignItems: 'center',
   },
-  torchButtonActive: {
-    backgroundColor: colors.accent,
+  trayButtonActive: {
+    backgroundColor: colors.white,
+    borderColor: colors.white,
   },
-  libraryButtonText: {
-    ...typography.body,
+  trayButtonText: {
+    ...typography.caption,
+    fontWeight: '700',
     color: colors.white,
+  },
+  trayButtonTextActive: {
+    color: colors.text,
   },
   preview: {
     flex: 1,
   },
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: colors.scrimStrong,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
@@ -235,6 +258,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
   },
+  ghostButton: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    backgroundColor: colors.glass,
+    borderWidth: 1,
+    borderColor: colors.glassBorder,
+  },
+  ghostButtonText: {
+    ...typography.body,
+    color: colors.white,
+    fontWeight: '600',
+  },
+  primaryButtonLarge: {
+    flex: 1,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    ...shadows.md,
+  },
   permissionContainer: {
     flex: 1,
     backgroundColor: colors.background,
@@ -247,6 +292,7 @@ const styles = StyleSheet.create({
     ...typography.h2,
     color: colors.text,
     textAlign: 'center',
+    marginTop: spacing.md,
   },
   permissionBody: {
     ...typography.body,
@@ -255,11 +301,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   primaryButton: {
-    flex: 1,
+    alignSelf: 'stretch',
     backgroundColor: colors.primary,
     paddingVertical: spacing.md,
     borderRadius: radius.md,
     alignItems: 'center',
+    ...shadows.md,
   },
   primaryButtonText: {
     ...typography.body,
@@ -267,7 +314,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   secondaryButton: {
-    flex: 1,
+    alignSelf: 'stretch',
     backgroundColor: colors.surfaceAlt,
     paddingVertical: spacing.md,
     borderRadius: radius.md,

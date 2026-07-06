@@ -33,6 +33,7 @@
     - embeddings uses AI SDK cosine similarity instead of pgvector index
 - added if "imagetoodark" check
 - aborts API call from MORE-RECIPES if changing food tags 
+- limit to 100 requests per 30 minutes
 
 Structured outputs: Force the model to return strict JSON (recipe name, time, difficulty, ingredients with quantities, steps) via tool-calling/schema constraints rather than parsing free text — shows you understand reliability issues with LLMs.
 Ingredient confidence/correction step: After photo analysis, show detected ingredients and let the user confirm/edit before generating recipes — handles vision-model errors gracefully instead of pretending it's perfect.
@@ -40,9 +41,6 @@ Smart exclusion for refresh: Instead of just avoiding repeats, use embeddings or
 Caching/cost awareness: Cache ingredient→recipe results, discuss latency/cost trade-offs of vision + generation calls in your video — this hits the "trajectory of LLMs" angle they mention wanting to see.
 Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (blurry, no food detected).
 
-
-
-#### todo 
 
 
 ### Tradeoffs
@@ -67,5 +65,19 @@ Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (
 
 ????
 - can i use third party API to generate recipes or is that againt the assignment - would save time, money, and image relevancy while primarily reducing latency
-- 
+    - but wouldn't generate obscure ingreident list - otherwise will just use existing apps
 
+
+### improvements
+- run LLM locally 
+- consider hybrid API calling for recipes to reduce further latency
+- implemenet more defined firewall rules specfic for vision to reduce constant expsnive hits - but grok costs for vision is pretty low 
+    - currently at 10 requests/30 mins to call vision analyze function
+    - ideally also recipes refresh limits
+
+Endpoint	Heavy legit session	Limit	Why
+POST /api/analyze	1–3 calls	10	Priciest by far — vision model + up to 20 recipe generations + image lookups on a cache miss
+POST /api/more-recipes	5–15 calls	30	Triggers LLM generation, but a smaller batch (10–15) and no vision call
+POST /api/update-ingredients	2–5 calls	20	Same generation path as analyze, smaller batch (10)
+POST /api/lookup-ingredients	2–5 calls	60	Read-only — no generation, just an embedding call + DB read
+GET /api/recipe	10–20 calls	200	Your most-frequent legit call (every card tap); generation only fires once ever per recipe ID, so abuse potential is naturally self-limiting

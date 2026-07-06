@@ -27,9 +27,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primarySurface,
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.xs + 1,
     borderWidth: 1,
-    borderColor: colors.primaryLight + '55',
+    borderColor: colors.primarySurface,
   },
   text: {
     ...typography.bodySmall,
@@ -38,9 +38,15 @@ const styles = StyleSheet.create({
   },
   removeButton: {
     marginLeft: spacing.xs,
+    width: 16,
+    height: 16,
+    borderRadius: radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   removeText: {
-    ...typography.bodySmall,
+    fontSize: 15,
+    lineHeight: 15,
     color: colors.primary,
     fontWeight: '700',
   },

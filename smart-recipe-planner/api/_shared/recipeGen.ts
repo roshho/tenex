@@ -43,8 +43,11 @@ async function searchPixabayCandidates(query: string, count = 5): Promise<string
     );
     if (!res.ok) return []; // Pixabay returns a plain-text error string, not JSON, on failure
     const data = await res.json() as { hits?: { largeImageURL?: string; webformatURL?: string }[] };
+    // webformatURL (capped ~640px) over largeImageURL (capped ~1280px) — these only ever
+    // render at card/hero width (a few hundred px), so the large variant was 4x the bytes
+    // for no visible gain, and was the main source of slow image loads.
     return (data.hits ?? [])
-      .map(h => h.largeImageURL ?? h.webformatURL)
+      .map(h => h.webformatURL ?? h.largeImageURL)
       .filter((u): u is string => !!u);
   } catch {
     return [];
@@ -60,8 +63,10 @@ async function searchUnsplash(query: string): Promise<string | null> {
         signal: AbortSignal.timeout(5000),
       }
     );
-    const data = await res.json() as { results?: { urls?: { regular?: string } }[] };
-    return data.results?.[0]?.urls?.regular ?? null;
+    const data = await res.json() as { results?: { urls?: { regular?: string; small?: string } }[] };
+    // small (~400px) over regular (~1080px) — same reasoning as the Pixabay webformatURL
+    // swap above: this only ever fills a card/hero slot, never a full-res lightbox.
+    return data.results?.[0]?.urls?.small ?? data.results?.[0]?.urls?.regular ?? null;
   } catch {
     return null;
   }

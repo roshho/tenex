@@ -46,7 +46,12 @@ export interface UpdateIngredientsResponse {
   recipes: RecipeStub[];
 }
 
+export type LookupIngredientsResponse =
+  | { matched: true; ingredientSetId: string; detectedIngredients: string[]; recipes: RecipeStub[] }
+  | { matched: false };
+
 export type RootStackParamList = {
+  Landing: undefined;
   Camera: undefined;
   RecipeList: {
     ingredients: string[];

@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScrollView, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { Cuisine } from '../constants/genres';
-import { colors, spacing, radius, typography } from '../constants/theme';
+import { colors, spacing, radius, typography, shadows } from '../constants/theme';
 
 interface Props {
   cuisines: Cuisine[];
@@ -38,7 +38,11 @@ function Tag({
   onPress: () => void;
 }) {
   return (
-    <TouchableOpacity style={[styles.tag, active && styles.tagActive]} onPress={onPress}>
+    <TouchableOpacity
+      style={[styles.tag, active && styles.tagActive]}
+      onPress={onPress}
+      activeOpacity={0.8}
+    >
       <Text style={[styles.tagText, active && styles.tagTextActive]}>
         {active && clearable ? `${label}  ×` : label}
       </Text>
@@ -53,15 +57,16 @@ const styles = StyleSheet.create({
   },
   tag: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
+    paddingVertical: spacing.xs + 2,
     borderRadius: radius.full,
-    backgroundColor: colors.surfaceAlt,
+    backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
   tagActive: {
     backgroundColor: colors.primary,
     borderColor: colors.primary,
+    ...shadows.sm,
   },
   tagText: {
     ...typography.bodySmall,

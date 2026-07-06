@@ -1,4 +1,7 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "."
+  "buildCommand": "npm run build && npx expo export --platform web",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ]
 }

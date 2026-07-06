@@ -15,7 +15,7 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, RecipeStub } from '../types';
 import { Cuisine } from '../constants/genres';
 import { useRecipeStore } from '../store/recipeStore';
-import { fetchMoreRecipes, updateIngredients } from '../lib/api';
+import { fetchMoreRecipes, updateIngredients, lookupIngredients } from '../lib/api';
 import { showError } from '../lib/alert';
 import RecipeCard from '../components/RecipeCard';
 import IngredientBadge from '../components/IngredientBadge';
@@ -43,12 +43,14 @@ export default function RecipeListScreen({ navigation }: Props) {
     selectGenre,
     appendStubs,
     removeIngredient,
+    setStubs,
     addIngredientOptimistic,
     mergeIngredientAdditionResult,
   } = useRecipeStore();
   const recipes = visibleStubs();
   const availableCuisines = Array.from(new Set(allStubs.map(s => s.cuisine))) as Cuisine[];
   const [newIngredientText, setNewIngredientText] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [isExhausted, setIsExhausted] = useState(false);
   const topUpAbortRef = useRef<AbortController | null>(null);
 
@@ -112,6 +114,37 @@ export default function RecipeListScreen({ navigation }: Props) {
     }
   };
 
+  // Removing a tag filters allStubs down instantly (see removeIngredient in the store) —
+  // no network call needed for that. This mutation is a background enhancement on top:
+  // check whether the *reduced* ingredient list already has a persisted set in the
+  // database (exact/fuzzy match, same cache the rest of the app uses) and, if so, swap to
+  // its full cached recipe list instead of just the leftovers of the current one. It never
+  // generates — a miss just means the instant client-side filter is the final result, and
+  // we stop pagination from silently regenerating against the now-stale ingredient list.
+  const removeIngredientLookupMutation = useMutation({
+    mutationFn: (updated: string[]) => lookupIngredients(updated),
+    onSuccess: (data) => {
+      if (data.matched) {
+        // The matched set may hold plenty of recipes the user hasn't paged through yet —
+        // let normal pagination/exhaustion logic re-evaluate against the fuller pool.
+        setStubs(data.recipes, data.detectedIngredients, data.ingredientSetId);
+        setIsExhausted(false);
+      } else {
+        // No persisted set for this combination, and we deliberately don't generate one
+        // here — the current (already-filtered) pool is all there is until more ingredients
+        // change things again.
+        setIsExhausted(true);
+      }
+    },
+  });
+
+  const handleRemoveIngredient = (name: string) => {
+    const updated = detectedIngredients.filter(i => i !== name);
+    removeIngredient(name); // instant local filter, no backend call
+    if (updated.length === 0) return; // nothing left to look up
+    removeIngredientLookupMutation.mutate(updated);
+  };
+
   const handleSelectGenre = (genre: Cuisine | null) => {
     // Whatever was loading for the old tag is no longer relevant — stop waiting on it
     // (and the server stops generating it, see more-recipes.ts's abort wiring) so its
@@ -138,26 +171,29 @@ export default function RecipeListScreen({ navigation }: Props) {
     <View style={styles.container}>
       {/* Detected ingredients strip */}
       <View style={styles.ingredientsSection}>
-        <Text style={styles.ingredientsLabel}>Detected ingredients</Text>
+        <Text style={styles.sectionLabel}>Detected ingredients</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgeRow}>
           {detectedIngredients.map((ing) => (
-            <IngredientBadge key={ing} label={ing} onRemove={() => removeIngredient(ing)} />
+            <IngredientBadge key={ing} label={ing} onRemove={() => handleRemoveIngredient(ing)} />
           ))}
         </ScrollView>
         <View style={styles.addIngredientRow}>
           <TextInput
-            style={styles.addIngredientInput}
+            style={[styles.addIngredientInput, inputFocused && styles.addIngredientInputFocused]}
             placeholder="Add an ingredient…"
             placeholderTextColor={colors.textMuted}
             value={newIngredientText}
             onChangeText={setNewIngredientText}
             onSubmitEditing={handleAddIngredient}
+            onFocus={() => setInputFocused(true)}
+            onBlur={() => setInputFocused(false)}
             returnKeyType="done"
           />
           <TouchableOpacity
             style={[styles.addIngredientButton, !newIngredientText.trim() && styles.disabledButton]}
             onPress={handleAddIngredient}
             disabled={!newIngredientText.trim() || addIngredientMutation.isPending}
+            activeOpacity={0.85}
           >
             <Text style={styles.addIngredientButtonText}>{addIngredientMutation.isPending ? '…' : 'Add'}</Text>
           </TouchableOpacity>
@@ -180,6 +216,13 @@ export default function RecipeListScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
         onEndReached={handleRefresh}
         onEndReachedThreshold={0.5}
+        ListEmptyComponent={
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyStateText}>
+              {selectedGenre ? `No ${selectedGenre} recipes yet.` : 'Finding recipes for you…'}
+            </Text>
+          </View>
+        }
         ListFooterComponent={
           topUpMutation.isPending ? (
             <View style={styles.footer}>
@@ -188,9 +231,11 @@ export default function RecipeListScreen({ navigation }: Props) {
                 {selectedGenre ? `Finding more ${selectedGenre} recipes…` : 'Finding more recipes…'}
               </Text>
             </View>
-          ) : isExhausted ? (
+          ) : isExhausted && recipes.length > 0 ? (
             <View style={styles.footer}>
+              <View style={styles.footerRule} />
               <Text style={styles.footerExhaustedText}>That's all for now</Text>
+              <View style={styles.footerRule} />
             </View>
           ) : null
         }
@@ -211,11 +256,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     gap: spacing.sm,
   },
-  ingredientsLabel: {
-    ...typography.label,
+  sectionLabel: {
+    ...typography.eyebrow,
     color: colors.textMuted,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
     paddingHorizontal: spacing.md,
   },
   badgeRow: {
@@ -238,6 +282,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
   },
+  addIngredientInputFocused: {
+    borderColor: colors.primaryLight,
+    backgroundColor: colors.surface,
+  },
   addIngredientButton: {
     paddingHorizontal: spacing.md,
     justifyContent: 'center',
@@ -257,10 +305,21 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
-    paddingBottom: spacing.md,
+    paddingBottom: spacing.xl,
+    flexGrow: 1,
   },
   separator: {
-    height: spacing.sm,
+    height: spacing.md,
+  },
+  emptyState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  emptyStateText: {
+    ...typography.body,
+    color: colors.textMuted,
   },
   footer: {
     flexDirection: 'row',
@@ -272,6 +331,11 @@ const styles = StyleSheet.create({
   footerText: {
     ...typography.bodySmall,
     color: colors.textMuted,
+  },
+  footerRule: {
+    width: 24,
+    height: 1,
+    backgroundColor: colors.border,
   },
   footerExhaustedText: {
     ...typography.bodySmall,
