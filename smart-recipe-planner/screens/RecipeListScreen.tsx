@@ -39,7 +39,8 @@ export default function RecipeListScreen({ navigation }: Props) {
     selectGenre,
     appendStubs,
     removeIngredient,
-    applyIngredientAddition,
+    addIngredientOptimistic,
+    mergeIngredientAdditionResult,
     reset,
   } = useRecipeStore();
   const recipes = visibleStubs();
@@ -69,17 +70,17 @@ export default function RecipeListScreen({ navigation }: Props) {
     },
   });
 
-  // Adding an ingredient resolves in the background (cache or a fresh 10-recipe batch)
-  // and just gets appended once ready — the rest of the screen stays fully usable
-  // in the meantime, so it never blocks on this.
+  // The tag is added optimistically the moment the user hits "Add" (see
+  // handleAddIngredient) — this mutation only resolves the background recipe
+  // generation/lookup for the updated list and merges the results in once ready.
   const addIngredientMutation = useMutation({
     mutationFn: (updated: string[]) => updateIngredients(updated),
     onSuccess: (data) => {
-      applyIngredientAddition(data.detectedIngredients, data.ingredientSetId, data.recipes);
+      mergeIngredientAdditionResult(data.ingredientSetId, data.recipes);
       setIsExhausted(false);
     },
     onError: (err) => {
-      showError('Something went wrong', `We couldn't add that ingredient.\n\n${err.message}`);
+      showError('Something went wrong', `We couldn't find recipes for that ingredient.\n\n${err.message}`);
     },
   });
 
@@ -119,9 +120,11 @@ export default function RecipeListScreen({ navigation }: Props) {
 
   const handleAddIngredient = () => {
     const trimmed = newIngredientText.trim();
-    if (!trimmed || addIngredientMutation.isPending) return;
+    if (!trimmed || detectedIngredients.includes(trimmed) || addIngredientMutation.isPending) return;
     setNewIngredientText('');
-    addIngredientMutation.mutate([...detectedIngredients, trimmed]);
+    const updated = [...detectedIngredients, trimmed];
+    addIngredientOptimistic(trimmed); // tag appears immediately
+    addIngredientMutation.mutate(updated); // recipes for it arrive in the background
   };
 
   const refreshLabel = canRefresh()

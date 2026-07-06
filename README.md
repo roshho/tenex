@@ -62,3 +62,5 @@ Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (
 
 - Nutrition/dietary filtering: Structured toggles (vegetarian, gluten-free, calorie target) that constrain generation.
     - Instead doing cuisine tags as ingreidents available are likely to be limited by dietary limitation already
+
+- 

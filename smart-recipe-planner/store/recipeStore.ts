@@ -12,7 +12,8 @@ interface RecipeStore {
   setStubs: (stubs: RecipeStub[], ingredients: string[], ingredientSetId: string) => void;
   appendStubs: (stubs: RecipeStub[]) => void;
   removeIngredient: (name: string) => void;
-  applyIngredientAddition: (ingredients: string[], ingredientSetId: string, newStubs: RecipeStub[]) => void;
+  addIngredientOptimistic: (name: string) => void;
+  mergeIngredientAdditionResult: (ingredientSetId: string, newStubs: RecipeStub[]) => void;
   selectGenre: (genre: Cuisine | null) => void;
   advance: () => void;
   filteredStubs: () => RecipeStub[];
@@ -33,16 +34,23 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
 
   appendStubs: (stubs) => set(state => ({ allStubs: [...state.allStubs, ...stubs] })),
 
-  // Removing a detected ingredient is purely cosmetic — the already-generated recipes
-  // stay exactly as they are, no recompute.
+  // Removing an ingredient drops it from the badge list AND any recipe that relied on
+  // it — no server round-trip needed, the matchedIngredients we already have are enough.
   removeIngredient: (name) =>
-    set(state => ({ detectedIngredients: state.detectedIngredients.filter(i => i !== name) })),
-
-  // Adding one resolves to a (possibly new) ingredient set generated/found in the
-  // background; merge its recipes in and start pointing future requests at it.
-  applyIngredientAddition: (ingredients, ingredientSetId, newStubs) =>
     set(state => ({
-      detectedIngredients: ingredients,
+      detectedIngredients: state.detectedIngredients.filter(i => i !== name),
+      allStubs: state.allStubs.filter(s => !s.matchedIngredients.includes(name)),
+    })),
+
+  // Adding one shows the tag immediately (optimistic) while the actual recipe
+  // generation/lookup for the updated ingredient list happens in the background.
+  addIngredientOptimistic: (name) =>
+    set(state => ({ detectedIngredients: [...state.detectedIngredients, name] })),
+
+  // Called once that background lookup resolves — just merges recipes in and starts
+  // pointing future requests (top-up, further additions) at the resolved ingredient set.
+  mergeIngredientAdditionResult: (ingredientSetId, newStubs) =>
+    set(state => ({
       ingredientSetId,
       allStubs: [...state.allStubs, ...newStubs],
     })),

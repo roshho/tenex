@@ -2,6 +2,7 @@ import React from 'react';
 import {
   View,
   Text,
+  Image,
   ScrollView,
   StyleSheet,
   ActivityIndicator,
@@ -50,6 +51,8 @@ export default function RecipeDetailScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      {recipe.imageUrl && <Image source={{ uri: recipe.imageUrl }} style={styles.heroImage} />}
+
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>{recipe.title}</Text>
@@ -127,6 +130,11 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingBottom: spacing.xxl,
+  },
+  heroImage: {
+    width: '100%',
+    height: 220,
+    backgroundColor: colors.surfaceAlt,
   },
   centered: {
     flex: 1,

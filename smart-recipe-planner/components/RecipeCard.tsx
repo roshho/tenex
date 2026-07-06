@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, Image, TouchableOpacity, StyleSheet } from 'react-native';
 import { RecipeStub } from '../types';
 import { colors, spacing, radius, typography } from '../constants/theme';
 
@@ -19,6 +19,7 @@ export default function RecipeCard({ stub, onPress }: Props) {
 
   return (
     <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
+      {stub.imageUrl && <Image source={{ uri: stub.imageUrl }} style={styles.image} />}
       <View style={styles.top}>
         <View style={styles.titleRow}>
           <Text style={styles.title} numberOfLines={2}>{stub.title}</Text>
@@ -69,6 +70,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: 160,
+    backgroundColor: colors.surfaceAlt,
   },
   top: {
     padding: spacing.md,
