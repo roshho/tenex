@@ -7,12 +7,17 @@ import {
   StyleSheet,
   ScrollView,
 } from 'react-native';
+import { useMutation } from '@tanstack/react-query';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, RecipeStub } from '../types';
+import { Cuisine } from '../constants/genres';
 import { useRecipeStore } from '../store/recipeStore';
+import { fetchMoreRecipes } from '../lib/api';
+import { showError } from '../lib/alert';
 import RecipeCard from '../components/RecipeCard';
 import IngredientBadge from '../components/IngredientBadge';
+import GenreTagRow from '../components/GenreTagRow';
 import { colors, spacing, radius, typography } from '../constants/theme';
 
 type Props = {
@@ -22,10 +27,64 @@ type Props = {
 
 export default function RecipeListScreen({ navigation, route }: Props) {
   const { ingredients } = route.params;
-  const { currentBatch, advance, canRefresh, reset } = useRecipeStore();
-  const recipes = currentBatch();
+  const {
+    allStubs,
+    ingredientSetId,
+    selectedGenre,
+    visibleStubs,
+    filteredStubs,
+    advance,
+    canRefresh,
+    selectGenre,
+    appendStubs,
+    reset,
+  } = useRecipeStore();
+  const recipes = visibleStubs();
+  const availableCuisines = Array.from(new Set(allStubs.map(s => s.cuisine))) as Cuisine[];
 
-  const handleRefresh = () => advance();
+  // Cuisine tags are now built entirely from what's already in allStubs, so tapping one is
+  // just a local filter — no network call, ever. Top-up (below) is what keeps the diverse
+  // pool stocked; it never fetches "just this genre" anymore.
+  const topUpMutation = useMutation({
+    mutationFn: () =>
+      fetchMoreRecipes({
+        ingredientSetId: ingredientSetId!,
+        excludeTitles: allStubs.map(s => s.title),
+      }),
+    onSuccess: (data) => appendStubs(data.recipes),
+    onError: (err) => {
+      showError(
+        'Something went wrong',
+        `We couldn't find more recipes.\n\n${err.message}`,
+        () => topUpMutation.mutate()
+      );
+    },
+  });
+
+  const handleRefresh = () => {
+    if (!canRefresh()) {
+      if (selectedGenre) {
+        // This cuisine is exhausted — there's no per-genre generation anymore, so the
+        // useful action is to go back to the full list rather than a dead end.
+        selectGenre(null);
+        return;
+      }
+      if (!topUpMutation.isPending) topUpMutation.mutate();
+      return;
+    }
+    advance();
+    if (!selectedGenre) {
+      const state = useRecipeStore.getState();
+      const remaining = state.filteredStubs().length - (state.nextIndex + 5);
+      if (remaining < 10 && !topUpMutation.isPending) {
+        topUpMutation.mutate();
+      }
+    }
+  };
+
+  const handleSelectGenre = (genre: Cuisine | null) => {
+    selectGenre(genre === selectedGenre ? null : genre);
+  };
 
   const handleSelectRecipe = (stub: RecipeStub) => {
     navigation.navigate('RecipeDetail', { recipeId: stub.id, title: stub.title });
@@ -35,6 +94,14 @@ export default function RecipeListScreen({ navigation, route }: Props) {
     reset();
     navigation.popToTop();
   };
+
+  const refreshLabel = canRefresh()
+    ? 'Show 5 More'
+    : selectedGenre
+    ? 'Show All Recipes'
+    : topUpMutation.isPending
+    ? 'Finding more…'
+    : 'Get More Recipes';
 
   return (
     <View style={styles.container}>
@@ -48,10 +115,15 @@ export default function RecipeListScreen({ navigation, route }: Props) {
         </ScrollView>
       </View>
 
+      {/* Genre tags */}
+      <View style={styles.genresSection}>
+        <GenreTagRow cuisines={availableCuisines} selected={selectedGenre} onSelect={handleSelectGenre} />
+      </View>
+
       {/* Recipe count header */}
       <View style={styles.listHeader}>
         <Text style={styles.listTitle}>Recipes for you</Text>
-        <Text style={styles.listSubtitle}>{recipes.length} of many</Text>
+        <Text style={styles.listSubtitle}>{recipes.length} of {filteredStubs().length}</Text>
       </View>
 
       <FlatList
@@ -71,13 +143,11 @@ export default function RecipeListScreen({ navigation, route }: Props) {
           <Text style={styles.secondaryButtonText}>New Photo</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.primaryButton, !canRefresh() && styles.disabledButton]}
+          style={[styles.primaryButton, topUpMutation.isPending && styles.disabledButton]}
           onPress={handleRefresh}
-          disabled={!canRefresh()}
+          disabled={topUpMutation.isPending}
         >
-          <Text style={styles.primaryButtonText}>
-            {canRefresh() ? 'Show 5 More' : 'No more recipes'}
-          </Text>
+          <Text style={styles.primaryButtonText}>{refreshLabel}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -106,6 +176,11 @@ const styles = StyleSheet.create({
   badgeRow: {
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
+  },
+  genresSection: {
+    paddingVertical: spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
   listHeader: {
     flexDirection: 'row',

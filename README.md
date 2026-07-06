@@ -26,11 +26,23 @@
 
 ### Remarks
 - Having trouble approving AWS bedrock IAM credentials so had to temporarily use a long term API key instead
+- caching image using metadata
 
 
 #### todo 
-- implement bad lighting condition context
-- improve UI
-- consider implementing other methods of identifying grocery objects or asking users to retake image in better conditions
-- cache 20 responses at once
-- using aws bedrock to use other models if the first model struggless
+- dark condition - struggle to identify, use flashlight
+
+- Cache metadata of image 
+    - Finally, when i pick my photo, back out of the recipes page, then click on "find recipes" again, it calls an image analysis api all over again - make sure to cache photos using the metadata as some kkind of UID - make sure to save it into the database so we dont need to a new API everytime
+- word embedding or improved ingreident identifcaiton to reuse past recipes
+- bookmarking function
+- reloading new recipes using a scrolling down function?
+
+### Tradeoffs
+- recipe generating 30 at once takes a long time even with sonnet 4.6. These are also predetermined genres of food. Instead let us generate around 10, upon refresh then we will generate 20. This will slow down UI, but the intial image analysis (which includes generating the recipe) should be reduced signcantly (currently all front loading takes around 1-1.5m)
+    - used a lightweight model like grok, but still struggling
+        - did away with pre-caching idea to cover more recipe diversity - unnecessary token usage + adding more latency
+            - Instead changing to only showing tags that are available from initially generated 30 recipes
+
+- removed the option to generate to select cuisine tags out of intiially genearted 30 options - assuming unlikely for user to want so many recipes at once
+    - instead just showing available tags from the intiially generated 30 recipes

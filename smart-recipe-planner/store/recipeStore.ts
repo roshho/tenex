@@ -1,40 +1,60 @@
 import { create } from 'zustand';
 import { RecipeStub } from '../types';
+import { Cuisine } from '../constants/genres';
 
 interface RecipeStore {
   allStubs: RecipeStub[];
-  nextIndex: number;
+  ingredientSetId: string | null;
   detectedIngredients: string[];
+  selectedGenre: Cuisine | null;
+  nextIndex: number;
 
-  setStubs: (stubs: RecipeStub[], ingredients: string[]) => void;
+  setStubs: (stubs: RecipeStub[], ingredients: string[], ingredientSetId: string) => void;
+  appendStubs: (stubs: RecipeStub[]) => void;
+  selectGenre: (genre: Cuisine | null) => void;
   advance: () => void;
-  currentBatch: () => RecipeStub[];
+  filteredStubs: () => RecipeStub[];
+  visibleStubs: () => RecipeStub[];
   canRefresh: () => boolean;
   reset: () => void;
 }
 
 export const useRecipeStore = create<RecipeStore>((set, get) => ({
   allStubs: [],
-  nextIndex: 0,
+  ingredientSetId: null,
   detectedIngredients: [],
+  selectedGenre: null,
+  nextIndex: 0,
 
-  setStubs: (stubs, ingredients) => set({ allStubs: stubs, nextIndex: 0, detectedIngredients: ingredients }),
+  setStubs: (stubs, ingredients, ingredientSetId) =>
+    set({ allStubs: stubs, ingredientSetId, detectedIngredients: ingredients, selectedGenre: null, nextIndex: 0 }),
 
-  advance: () => {
-    const { nextIndex, allStubs } = get();
-    const next = nextIndex + 5;
-    if (next < allStubs.length) set({ nextIndex: next });
+  appendStubs: (stubs) => set(state => ({ allStubs: [...state.allStubs, ...stubs] })),
+
+  selectGenre: (genre) => set({ selectedGenre: genre, nextIndex: 0 }),
+
+  filteredStubs: () => {
+    const { allStubs, selectedGenre } = get();
+    return selectedGenre ? allStubs.filter(s => s.cuisine === selectedGenre) : allStubs;
   },
 
-  currentBatch: () => {
-    const { allStubs, nextIndex } = get();
-    return allStubs.slice(nextIndex, nextIndex + 5);
+  advance: () => {
+    const { nextIndex, filteredStubs } = get();
+    const next = nextIndex + 5;
+    if (next < filteredStubs().length) set({ nextIndex: next });
+  },
+
+  // Everything from the start through the current page, not a sliding 5-item window —
+  // so "Show 5 More" grows the list and the user can scroll back up to earlier recipes.
+  visibleStubs: () => {
+    const { nextIndex, filteredStubs } = get();
+    return filteredStubs().slice(0, nextIndex + 5);
   },
 
   canRefresh: () => {
-    const { allStubs, nextIndex } = get();
-    return nextIndex + 5 < allStubs.length;
+    const { nextIndex, filteredStubs } = get();
+    return nextIndex + 5 < filteredStubs().length;
   },
 
-  reset: () => set({ allStubs: [], nextIndex: 0, detectedIngredients: [] }),
+  reset: () => set({ allStubs: [], ingredientSetId: null, detectedIngredients: [], selectedGenre: null, nextIndex: 0 }),
 }));

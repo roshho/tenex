@@ -1,4 +1,4 @@
-import { AnalyzeResponse, RecipeFull } from '../types';
+import { AnalyzeResponse, RecipeFull, RecipeStub } from '../types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -10,8 +10,14 @@ export async function analyzeIngredients(base64Image: string): Promise<AnalyzeRe
   });
 
   if (!res.ok) {
-    const error = await res.text();
-    throw new Error(error || 'Failed to analyze image');
+    let message = 'Failed to analyze image';
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
+    } catch {
+      // response wasn't JSON — keep the generic message
+    }
+    throw new Error(message);
   }
 
   return res.json();
@@ -23,6 +29,30 @@ export async function fetchFullRecipe(recipeId: string): Promise<RecipeFull> {
   if (!res.ok) {
     const error = await res.text();
     throw new Error(error || 'Failed to fetch recipe');
+  }
+
+  return res.json();
+}
+
+export async function fetchMoreRecipes(params: {
+  ingredientSetId: string;
+  excludeTitles: string[];
+}): Promise<{ recipes: RecipeStub[] }> {
+  const res = await fetch(`${BASE_URL}/api/more-recipes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    let message = 'Failed to fetch more recipes';
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.details ? `${body.error}: ${body.details}` : body.error;
+    } catch {
+      // response wasn't JSON — keep the generic message
+    }
+    throw new Error(message);
   }
 
   return res.json();

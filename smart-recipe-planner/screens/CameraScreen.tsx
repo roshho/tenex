@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Platform,
   Image,
 } from 'react-native';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
@@ -25,6 +26,7 @@ type Props = {
 export default function CameraScreen({ navigation }: Props) {
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [torchOn, setTorchOn] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const { setStubs } = useRecipeStore();
 
@@ -39,11 +41,23 @@ export default function CameraScreen({ navigation }: Props) {
       return analyzeIngredients(compressed.base64);
     },
     onSuccess: (data) => {
-      setStubs(data.recipes, data.detectedIngredients);
+      setStubs(data.recipes, data.detectedIngredients, data.ingredientSetId);
       navigation.navigate('RecipeList', { ingredients: data.detectedIngredients });
     },
     onError: (err: Error) => {
-      Alert.alert('Could not analyze image', err.message);
+      const body = `We couldn't identify ingredients in that photo.\n\n${err.message}`;
+      if (Platform.OS === 'web') {
+        window.alert(`Something went wrong\n\n${body}`);
+        return;
+      }
+      Alert.alert(
+        'Something went wrong',
+        body,
+        [
+          { text: 'Retake Photo', style: 'cancel', onPress: handleRetake },
+          { text: 'Try Again', onPress: () => capturedUri && analyzeMutation.mutate(capturedUri) },
+        ]
+      );
     },
   });
 
@@ -113,7 +127,7 @@ export default function CameraScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <CameraView ref={cameraRef} style={styles.camera} facing={'back' as CameraType}>
+      <CameraView ref={cameraRef} style={styles.camera} facing={'back' as CameraType} enableTorch={torchOn}>
         <View style={styles.cameraOverlay}>
           <Text style={styles.cameraHint}>Point at your ingredients</Text>
           <View style={styles.cameraControls}>
@@ -121,6 +135,12 @@ export default function CameraScreen({ navigation }: Props) {
               <Text style={styles.libraryButtonText}>Library</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.captureButton} onPress={handleCapture} />
+            <TouchableOpacity
+              style={[styles.libraryButton, torchOn && styles.torchButtonActive]}
+              onPress={() => setTorchOn(v => !v)}
+            >
+              <Text style={styles.libraryButtonText}>{torchOn ? 'Flash On' : 'Flash Off'}</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </CameraView>
@@ -168,6 +188,9 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radius.md,
     backgroundColor: 'rgba(255,255,255,0.2)',
+  },
+  torchButtonActive: {
+    backgroundColor: colors.accent,
   },
   libraryButtonText: {
     ...typography.body,

@@ -1,7 +1,9 @@
+import { Cuisine } from '../constants/genres';
+
 export interface RecipeStub {
   id: string;
   title: string;
-  cuisine: string;
+  cuisine: Cuisine;
   difficulty: 'Easy' | 'Medium' | 'Hard';
   prepTime: number;
   cookTime: number;
@@ -24,6 +26,7 @@ export interface Ingredient {
 }
 
 export interface AnalyzeResponse {
+  ingredientSetId: string;
   detectedIngredients: string[];
   recipes: RecipeStub[];
 }
