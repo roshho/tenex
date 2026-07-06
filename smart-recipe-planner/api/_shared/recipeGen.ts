@@ -31,16 +31,13 @@ export const RecipeSchema = z.object({
   ingredients: z.array(IngredientSchema),
 });
 
-export async function fetchUnsplashImage(query: string): Promise<string | null> {
+async function searchUnsplash(query: string): Promise<string | null> {
   try {
     const res = await fetch(
       `https://api.unsplash.com/search/photos?query=${encodeURIComponent(query)}&per_page=1&orientation=landscape`,
       {
         headers: { Authorization: `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}` },
-        // Without a bound, one stalled Unsplash request hangs the whole Promise.all
-        // in persistRecipes forever, so the client sees a bare "failed to fetch" with
-        // no server response at all rather than a clean error.
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(5000),
       }
     );
     const data = await res.json() as { results?: { urls?: { regular?: string } }[] };
@@ -48,6 +45,23 @@ export async function fetchUnsplashImage(query: string): Promise<string | null> 
   } catch {
     return null;
   }
+}
+
+// This project's Unsplash app is on the Demo tier: capped at 50 requests/HOUR. A single
+// 20-recipe scan already blows past that if every recipe does its own search — let alone
+// a per-title search plus fallbacks. So this searches by CUISINE, not by exact title, and
+// caches the result at module scope (persists across invocations on a warm serverless
+// instance) — at most 10 Unsplash calls ever get made (one per cuisine), no matter how many
+// recipes or scans happen. Trade-off: recipes sharing a cuisine share the same photo rather
+// than each getting a unique one — worth revisiting if the Unsplash app is ever approved for
+// production use, which lifts the rate cap.
+const genreImageCache = new Map<string, Promise<string | null>>();
+
+export function fetchUnsplashImage(genre: string): Promise<string | null> {
+  if (!genreImageCache.has(genre)) {
+    genreImageCache.set(genre, searchUnsplash(`${genre} food`));
+  }
+  return genreImageCache.get(genre)!;
 }
 
 /**
@@ -62,7 +76,7 @@ export async function persistRecipes(
   recipes: z.infer<typeof RecipeSchema>[]
 ): Promise<RecipeStub[]> {
   const [imageUrls, embeddings] = await Promise.all([
-    Promise.all(recipes.map(r => fetchUnsplashImage(r.title))),
+    Promise.all(recipes.map(r => fetchUnsplashImage(r.genre))),
     embedTexts(recipes.map(r => `${r.title}. ${r.description}`)),
   ]);
 

@@ -19,7 +19,6 @@ interface RecipeStore {
   filteredStubs: () => RecipeStub[];
   visibleStubs: () => RecipeStub[];
   canRefresh: () => boolean;
-  reset: () => void;
 }
 
 export const useRecipeStore = create<RecipeStore>((set, get) => ({
@@ -79,6 +78,4 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     const { nextIndex, filteredStubs } = get();
     return nextIndex + 5 < filteredStubs().length;
   },
-
-  reset: () => set({ allStubs: [], ingredientSetId: null, detectedIngredients: [], selectedGenre: null, nextIndex: 0 }),
 }));

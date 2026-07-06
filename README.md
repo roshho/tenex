@@ -32,6 +32,7 @@
     - 0.9 and 0.92 embedding threashold are arbitary
     - embeddings uses AI SDK cosine similarity instead of pgvector index
 - added if "imagetoodark" check
+- aborts API call from MORE-RECIPES if changing food tags 
 
 Structured outputs: Force the model to return strict JSON (recipe name, time, difficulty, ingredients with quantities, steps) via tool-calling/schema constraints rather than parsing free text — shows you understand reliability issues with LLMs.
 Ingredient confidence/correction step: After photo analysis, show detected ingredients and let the user confirm/edit before generating recipes — handles vision-model errors gracefully instead of pretending it's perfect.
@@ -63,4 +64,11 @@ Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (
 - Nutrition/dietary filtering: Structured toggles (vegetarian, gluten-free, calorie target) that constrain generation.
     - Instead doing cuisine tags as ingreidents available are likely to be limited by dietary limitation already
 
+- generates recipes, but embedding whether it's too reptetative. 
+- Considered tinder style swipe out of better UI, but primarily minimizing feel of latency when loading new recipes, however original steps require 5 cards at a time and 5 new cards for renewal
+- generating detailed recipes after clicking to prevent upfront latency and unneccessary tokens
+- unable to generate a lot of new unsplash images - so instead searched by cuisine tags w/ repeated images
+
+????
+- can i use third party API to generate recipes or is that againt the assignment - would save time, money, and image relevancy while primarily reducing latency
 - 

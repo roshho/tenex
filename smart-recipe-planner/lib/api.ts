@@ -1,4 +1,5 @@
 import { AnalyzeResponse, RecipeFull, MoreRecipesResponse, UpdateIngredientsResponse } from '../types';
+import { Cuisine } from '../constants/genres';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 
@@ -34,14 +35,19 @@ export async function fetchFullRecipe(recipeId: string): Promise<RecipeFull> {
   return res.json();
 }
 
-export async function fetchMoreRecipes(params: {
-  ingredientSetId: string;
-  excludeTitles: string[];
-}): Promise<MoreRecipesResponse> {
+export async function fetchMoreRecipes(
+  params: {
+    ingredientSetId: string;
+    excludeTitles: string[];
+    genre?: Cuisine;
+  },
+  signal?: AbortSignal
+): Promise<MoreRecipesResponse> {
   const res = await fetch(`${BASE_URL}/api/more-recipes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
+    signal,
   });
 
   if (!res.ok) {
