@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { RecipeSchema, persistRecipes } from './_shared/recipeGen.js';
 import { TEXT_MODEL, FALLBACK_MODEL } from './_shared/models.js';
+import { embedTexts, parseEmbedding, cosineSimilarity, RECIPE_DIVERSITY_THRESHOLD } from './_shared/embeddings.js';
 import { CUISINES } from '../constants/genres.js';
 
 const gw = createGateway({ apiKey: process.env.VERCEL_AI_GATEWAY_API_KEY });
@@ -76,10 +77,41 @@ Return structured JSON.`;
     console.log('[MORE-RECIPES] Generating for set', ingredientSetId);
     const { object: result } = await generateMoreWithFallback(prompt);
 
-    const stubs = await persistRecipes(supabase, ingredientSetId, result.recipes);
+    // Diversity filter: title-based exclusion only stops exact/near-exact repeats. Embed
+    // each candidate and drop any that are semantically too close to a recipe already
+    // shown for this ingredient set — different name for the same dish, different cuisine
+    // label on an identical preparation, etc.
+    const [candidateEmbeddings, existingRows] = await Promise.all([
+      embedTexts(result.recipes.map(r => `${r.title}. ${r.description}`)),
+      supabase.from('recipes').select('embedding').eq('ingredient_set_id', ingredientSetId).not('embedding', 'is', null),
+    ]);
+    const existingEmbeddings = (existingRows.data ?? [])
+      .map(r => parseEmbedding(r.embedding))
+      .filter((e): e is number[] => e !== null);
+
+    const diverseRecipes = result.recipes.filter((_, i) => {
+      const candidate = candidateEmbeddings[i];
+      const maxSimilarity = existingEmbeddings.reduce(
+        (max, existing) => Math.max(max, cosineSimilarity(candidate, existing)),
+        0
+      );
+      return maxSimilarity < RECIPE_DIVERSITY_THRESHOLD;
+    });
+
+    const survivalRatio = diverseRecipes.length / result.recipes.length;
+    const exhausted = survivalRatio < 0.5;
+    console.log(
+      '[MORE-RECIPES] Generated', result.recipes.length,
+      '— diverse enough to keep:', diverseRecipes.length,
+      exhausted ? '(flagging exhausted)' : ''
+    );
+
+    const stubs = diverseRecipes.length > 0
+      ? await persistRecipes(supabase, ingredientSetId, diverseRecipes)
+      : [];
 
     console.log('[MORE-RECIPES] Done. Persisted', stubs.length, 'recipes.');
-    return res.status(200).json({ recipes: stubs });
+    return res.status(200).json({ recipes: stubs, exhausted });
   } catch (err) {
     console.error('[MORE-RECIPES] Error:', err instanceof Error ? err.message : err);
     return res.status(500).json({ error: 'Failed to generate more recipes', details: err instanceof Error ? err.message : String(err) });

@@ -1,7 +1,13 @@
 import { z } from 'zod';
+import { generateObject } from 'ai';
+import { createGateway } from '@ai-sdk/gateway';
 import { SupabaseClient } from '@supabase/supabase-js';
 import { CUISINES } from '../../constants/genres.js';
 import { RecipeStub } from '../../types/index.js';
+import { TEXT_MODEL, FALLBACK_MODEL } from './models.js';
+import { embedTexts, toVectorLiteral } from './embeddings.js';
+
+const gw = createGateway({ apiKey: process.env.VERCEL_AI_GATEWAY_API_KEY });
 
 export const IngredientSchema = z.object({
   name: z.string(),
@@ -47,14 +53,18 @@ export async function fetchUnsplashImage(query: string): Promise<string | null> 
 /**
  * Persists newly generated recipes under an existing ingredient set: inserts `recipes`
  * (with steps/tips left null — those are generated lazily on first detail view) and
- * `recipe_ingredients`, fetching an Unsplash image per recipe along the way.
+ * `recipe_ingredients`, fetching an Unsplash image and an embedding (title + description,
+ * used later for diversity checks) per recipe along the way.
  */
 export async function persistRecipes(
   supabase: SupabaseClient,
   ingredientSetId: string,
   recipes: z.infer<typeof RecipeSchema>[]
 ): Promise<RecipeStub[]> {
-  const imageUrls = await Promise.all(recipes.map(r => fetchUnsplashImage(r.title)));
+  const [imageUrls, embeddings] = await Promise.all([
+    Promise.all(recipes.map(r => fetchUnsplashImage(r.title))),
+    embedTexts(recipes.map(r => `${r.title}. ${r.description}`)),
+  ]);
 
   const { data: insertedRecipes, error: recipesErr } = await supabase
     .from('recipes')
@@ -71,6 +81,7 @@ export async function persistRecipes(
         instructions: null,
         tips: null,
         image_url: imageUrls[i],
+        embedding: toVectorLiteral(embeddings[i]),
       }))
     )
     .select('id');
@@ -101,4 +112,53 @@ export async function persistRecipes(
     imageUrl: imageUrls[i] ?? undefined,
     matchedIngredients: r.matchedIngredients,
   }));
+}
+
+/** Re-projects already-generated recipes for an ingredient set into stubs — used on any cache hit. */
+export async function loadCachedRecipes(supabase: SupabaseClient, ingredientSetId: string): Promise<RecipeStub[]> {
+  const { data: cachedRecipes } = await supabase
+    .from('recipes')
+    .select('*, recipe_ingredients(*)')
+    .eq('ingredient_set_id', ingredientSetId)
+    .order('created_at');
+
+  return (cachedRecipes ?? []).map((r) => ({
+    id: r.id,
+    title: r.title,
+    cuisine: r.genre,
+    difficulty: r.difficulty,
+    prepTime: r.prep_time_minutes,
+    cookTime: r.cook_time_minutes,
+    servings: r.servings,
+    description: r.description,
+    imageUrl: r.image_url,
+    matchedIngredients: (r.recipe_ingredients as { from_scan: boolean; name: string }[])
+      .filter(i => i.from_scan)
+      .map(i => i.name),
+  }));
+}
+
+/**
+ * Generates a fresh batch of recipes from a plain ingredient list (no photo, no exclusion
+ * list) — shared by the initial scan and the "add an ingredient" flow, which only differ
+ * in how many recipes they ask for.
+ */
+export async function generateRecipesFromIngredients(ingredients: string[], count: number, minCount: number) {
+  const prompt = `You are a professional chef. A user has these ingredients available: ${ingredients.join(', ')}.
+
+Generate exactly ${count} diverse recipe outlines that primarily use these ingredients. Each recipe's genre must be one of: ${CUISINES.join(', ')}. Cover as wide a spread of those cuisines as makes sense for the ingredients.
+For each recipe's ingredient list, mark items from the ingredient list as fromScan: true, and any additional pantry staples needed as fromScan: false.
+matchedIngredients should list the names of fromScan: true ingredients used in that recipe.
+Do NOT write step-by-step cooking instructions yet — just the recipe metadata and ingredient list. Steps are generated later, only for recipes the user actually opens.
+
+Return structured JSON.`;
+
+  const schema = z.object({ recipes: z.array(RecipeSchema).min(minCount) });
+
+  try {
+    return await generateObject({ model: gw(TEXT_MODEL), schema, prompt });
+  } catch (primaryErr) {
+    console.warn('[GENERATE] Primary model failed, trying fallback:', primaryErr instanceof Error ? primaryErr.message : primaryErr);
+    return await generateObject({ model: gw(FALLBACK_MODEL), schema, prompt });
+  }
 }

@@ -24,9 +24,21 @@
         3. Deployed/live link
 
 
-### Remarks
+### Decisions
 - Having trouble approving AWS bedrock IAM credentials so had to temporarily use a long term API key instead
-- caching image using metadata
+- JSON output is forced using Zod schema instead of relying onn propmt. 
+- Using base64 of image for 'UID' to cache image
+- used fuzzy embedding match to match (1) identified ingredeients with past ingredients and (2) prevent duplication in recipe generations being displayed
+    - 0.9 and 0.92 embedding threashold are arbitary
+    - embeddings uses AI SDK cosine similarity instead of pgvector index
+- added if "imagetoodark" check
+
+Structured outputs: Force the model to return strict JSON (recipe name, time, difficulty, ingredients with quantities, steps) via tool-calling/schema constraints rather than parsing free text — shows you understand reliability issues with LLMs.
+Ingredient confidence/correction step: After photo analysis, show detected ingredients and let the user confirm/edit before generating recipes — handles vision-model errors gracefully instead of pretending it's perfect.
+Smart exclusion for refresh: Instead of just avoiding repeats, use embeddings or a diversity constraint so refreshed recipes are meaningfully different in cuisine/style, not just different names for the same dish.
+Caching/cost awareness: Cache ingredient→recipe results, discuss latency/cost trade-offs of vision + generation calls in your video — this hits the "trajectory of LLMs" angle they mention wanting to see.
+Offline-friendly UX: Skeleton loading states, graceful handling of a bad photo (blurry, no food detected).
+
 
 
 #### todo 
@@ -35,7 +47,6 @@
 - Cache metadata of image 
     - Finally, when i pick my photo, back out of the recipes page, then click on "find recipes" again, it calls an image analysis api all over again - make sure to cache photos using the metadata as some kkind of UID - make sure to save it into the database so we dont need to a new API everytime
 - word embedding or improved ingreident identifcaiton to reuse past recipes
-- bookmarking function
 - reloading new recipes using a scrolling down function?
 
 ### Tradeoffs
@@ -46,3 +57,8 @@
 
 - removed the option to generate to select cuisine tags out of intiially genearted 30 options - assuming unlikely for user to want so many recipes at once
     - instead just showing available tags from the intiially generated 30 recipes
+
+- Not using highly capable analysis model like Meta SAM3 because unnecessary and resource intensive
+
+- Nutrition/dietary filtering: Structured toggles (vegetarian, gluten-free, calorie target) that constrain generation.
+    - Instead doing cuisine tags as ingreidents available are likely to be limited by dietary limitation already

@@ -11,6 +11,8 @@ interface RecipeStore {
 
   setStubs: (stubs: RecipeStub[], ingredients: string[], ingredientSetId: string) => void;
   appendStubs: (stubs: RecipeStub[]) => void;
+  removeIngredient: (name: string) => void;
+  applyIngredientAddition: (ingredients: string[], ingredientSetId: string, newStubs: RecipeStub[]) => void;
   selectGenre: (genre: Cuisine | null) => void;
   advance: () => void;
   filteredStubs: () => RecipeStub[];
@@ -30,6 +32,20 @@ export const useRecipeStore = create<RecipeStore>((set, get) => ({
     set({ allStubs: stubs, ingredientSetId, detectedIngredients: ingredients, selectedGenre: null, nextIndex: 0 }),
 
   appendStubs: (stubs) => set(state => ({ allStubs: [...state.allStubs, ...stubs] })),
+
+  // Removing a detected ingredient is purely cosmetic — the already-generated recipes
+  // stay exactly as they are, no recompute.
+  removeIngredient: (name) =>
+    set(state => ({ detectedIngredients: state.detectedIngredients.filter(i => i !== name) })),
+
+  // Adding one resolves to a (possibly new) ingredient set generated/found in the
+  // background; merge its recipes in and start pointing future requests at it.
+  applyIngredientAddition: (ingredients, ingredientSetId, newStubs) =>
+    set(state => ({
+      detectedIngredients: ingredients,
+      ingredientSetId,
+      allStubs: [...state.allStubs, ...newStubs],
+    })),
 
   selectGenre: (genre) => set({ selectedGenre: genre, nextIndex: 0 }),
 

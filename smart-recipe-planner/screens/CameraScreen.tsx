@@ -42,7 +42,24 @@ export default function CameraScreen({ navigation }: Props) {
     },
     onSuccess: (data) => {
       setStubs(data.recipes, data.detectedIngredients, data.ingredientSetId);
-      navigation.navigate('RecipeList', { ingredients: data.detectedIngredients });
+
+      const proceed = () => navigation.navigate('RecipeList', { ingredients: data.detectedIngredients });
+
+      if (!data.imageTooDark) {
+        proceed();
+        return;
+      }
+
+      const message = "We identified what we could, but the photo looked a bit dark — some ingredients might be missed. Retake with the flash on, or continue with these results?";
+      if (Platform.OS === 'web') {
+        window.alert(`That photo looked a bit dark\n\n${message}`);
+        proceed();
+        return;
+      }
+      Alert.alert('That photo looked a bit dark', message, [
+        { text: 'Retake with Flash', onPress: () => { setTorchOn(true); setCapturedUri(null); } },
+        { text: 'Continue Anyway', onPress: proceed },
+      ]);
     },
     onError: (err: Error) => {
       const body = `We couldn't identify ingredients in that photo.\n\n${err.message}`;

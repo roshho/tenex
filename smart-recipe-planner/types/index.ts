@@ -29,6 +29,21 @@ export interface AnalyzeResponse {
   ingredientSetId: string;
   detectedIngredients: string[];
   recipes: RecipeStub[];
+  imageTooDark: boolean;
+}
+
+export interface MoreRecipesResponse {
+  recipes: RecipeStub[];
+  // True when most freshly generated candidates were too similar (by embedding) to
+  // recipes already shown — a signal that this ingredient set is running out of
+  // meaningfully different dishes to offer.
+  exhausted: boolean;
+}
+
+export interface UpdateIngredientsResponse {
+  ingredientSetId: string;
+  detectedIngredients: string[];
+  recipes: RecipeStub[];
 }
 
 export type RootStackParamList = {

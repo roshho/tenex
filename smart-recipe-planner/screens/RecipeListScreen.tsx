@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
+  TextInput,
   StyleSheet,
   ScrollView,
 } from 'react-native';
@@ -13,7 +14,7 @@ import { RouteProp } from '@react-navigation/native';
 import { RootStackParamList, RecipeStub } from '../types';
 import { Cuisine } from '../constants/genres';
 import { useRecipeStore } from '../store/recipeStore';
-import { fetchMoreRecipes } from '../lib/api';
+import { fetchMoreRecipes, updateIngredients } from '../lib/api';
 import { showError } from '../lib/alert';
 import RecipeCard from '../components/RecipeCard';
 import IngredientBadge from '../components/IngredientBadge';
@@ -25,11 +26,11 @@ type Props = {
   route: RouteProp<RootStackParamList, 'RecipeList'>;
 };
 
-export default function RecipeListScreen({ navigation, route }: Props) {
-  const { ingredients } = route.params;
+export default function RecipeListScreen({ navigation }: Props) {
   const {
     allStubs,
     ingredientSetId,
+    detectedIngredients,
     selectedGenre,
     visibleStubs,
     filteredStubs,
@@ -37,10 +38,14 @@ export default function RecipeListScreen({ navigation, route }: Props) {
     canRefresh,
     selectGenre,
     appendStubs,
+    removeIngredient,
+    applyIngredientAddition,
     reset,
   } = useRecipeStore();
   const recipes = visibleStubs();
   const availableCuisines = Array.from(new Set(allStubs.map(s => s.cuisine))) as Cuisine[];
+  const [newIngredientText, setNewIngredientText] = useState('');
+  const [isExhausted, setIsExhausted] = useState(false);
 
   // Cuisine tags are now built entirely from what's already in allStubs, so tapping one is
   // just a local filter — no network call, ever. Top-up (below) is what keeps the diverse
@@ -51,13 +56,30 @@ export default function RecipeListScreen({ navigation, route }: Props) {
         ingredientSetId: ingredientSetId!,
         excludeTitles: allStubs.map(s => s.title),
       }),
-    onSuccess: (data) => appendStubs(data.recipes),
+    onSuccess: (data) => {
+      appendStubs(data.recipes);
+      setIsExhausted(data.exhausted);
+    },
     onError: (err) => {
       showError(
         'Something went wrong',
         `We couldn't find more recipes.\n\n${err.message}`,
         () => topUpMutation.mutate()
       );
+    },
+  });
+
+  // Adding an ingredient resolves in the background (cache or a fresh 10-recipe batch)
+  // and just gets appended once ready — the rest of the screen stays fully usable
+  // in the meantime, so it never blocks on this.
+  const addIngredientMutation = useMutation({
+    mutationFn: (updated: string[]) => updateIngredients(updated),
+    onSuccess: (data) => {
+      applyIngredientAddition(data.detectedIngredients, data.ingredientSetId, data.recipes);
+      setIsExhausted(false);
+    },
+    onError: (err) => {
+      showError('Something went wrong', `We couldn't add that ingredient.\n\n${err.message}`);
     },
   });
 
@@ -69,11 +91,11 @@ export default function RecipeListScreen({ navigation, route }: Props) {
         selectGenre(null);
         return;
       }
-      if (!topUpMutation.isPending) topUpMutation.mutate();
+      if (!isExhausted && !topUpMutation.isPending) topUpMutation.mutate();
       return;
     }
     advance();
-    if (!selectedGenre) {
+    if (!selectedGenre && !isExhausted) {
       const state = useRecipeStore.getState();
       const remaining = state.filteredStubs().length - (state.nextIndex + 5);
       if (remaining < 10 && !topUpMutation.isPending) {
@@ -95,13 +117,24 @@ export default function RecipeListScreen({ navigation, route }: Props) {
     navigation.popToTop();
   };
 
+  const handleAddIngredient = () => {
+    const trimmed = newIngredientText.trim();
+    if (!trimmed || addIngredientMutation.isPending) return;
+    setNewIngredientText('');
+    addIngredientMutation.mutate([...detectedIngredients, trimmed]);
+  };
+
   const refreshLabel = canRefresh()
     ? 'Show 5 More'
     : selectedGenre
     ? 'Show All Recipes'
+    : isExhausted
+    ? "That's all for now"
     : topUpMutation.isPending
     ? 'Finding more…'
     : 'Get More Recipes';
+
+  const refreshDisabled = topUpMutation.isPending || (!canRefresh() && !selectedGenre && isExhausted);
 
   return (
     <View style={styles.container}>
@@ -109,10 +142,28 @@ export default function RecipeListScreen({ navigation, route }: Props) {
       <View style={styles.ingredientsSection}>
         <Text style={styles.ingredientsLabel}>Detected ingredients</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.badgeRow}>
-          {ingredients.map((ing) => (
-            <IngredientBadge key={ing} label={ing} />
+          {detectedIngredients.map((ing) => (
+            <IngredientBadge key={ing} label={ing} onRemove={() => removeIngredient(ing)} />
           ))}
         </ScrollView>
+        <View style={styles.addIngredientRow}>
+          <TextInput
+            style={styles.addIngredientInput}
+            placeholder="Add an ingredient…"
+            placeholderTextColor={colors.textMuted}
+            value={newIngredientText}
+            onChangeText={setNewIngredientText}
+            onSubmitEditing={handleAddIngredient}
+            returnKeyType="done"
+          />
+          <TouchableOpacity
+            style={[styles.addIngredientButton, !newIngredientText.trim() && styles.disabledButton]}
+            onPress={handleAddIngredient}
+            disabled={!newIngredientText.trim() || addIngredientMutation.isPending}
+          >
+            <Text style={styles.addIngredientButtonText}>{addIngredientMutation.isPending ? '…' : 'Add'}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Genre tags */}
@@ -143,9 +194,9 @@ export default function RecipeListScreen({ navigation, route }: Props) {
           <Text style={styles.secondaryButtonText}>New Photo</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.primaryButton, topUpMutation.isPending && styles.disabledButton]}
+          style={[styles.primaryButton, refreshDisabled && styles.disabledButton]}
           onPress={handleRefresh}
-          disabled={topUpMutation.isPending}
+          disabled={refreshDisabled}
         >
           <Text style={styles.primaryButtonText}>{refreshLabel}</Text>
         </TouchableOpacity>
@@ -164,6 +215,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    gap: spacing.sm,
   },
   ingredientsLabel: {
     ...typography.label,
@@ -171,11 +223,37 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     paddingHorizontal: spacing.md,
-    marginBottom: spacing.sm,
   },
   badgeRow: {
     paddingHorizontal: spacing.md,
     gap: spacing.sm,
+  },
+  addIngredientRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.md,
+    gap: spacing.sm,
+  },
+  addIngredientInput: {
+    flex: 1,
+    ...typography.bodySmall,
+    color: colors.text,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  addIngredientButton: {
+    paddingHorizontal: spacing.md,
+    justifyContent: 'center',
+    borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  addIngredientButtonText: {
+    ...typography.bodySmall,
+    color: colors.white,
+    fontWeight: '600',
   },
   genresSection: {
     paddingVertical: spacing.sm,
