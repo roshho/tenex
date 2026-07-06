@@ -9,6 +9,48 @@ import { embedTexts, toVectorLiteral } from './embeddings.js';
 
 const gw = createGateway({ apiKey: process.env.VERCEL_AI_GATEWAY_API_KEY });
 
+function normalizeUnicode(value: string): string {
+  let result = '';
+  for (let i = 0; i < value.length; i++) {
+    const current = value.charCodeAt(i);
+
+    if (current >= 0xD800 && current <= 0xDBFF) {
+      const next = value.charCodeAt(i + 1);
+      if (next >= 0xDC00 && next <= 0xDFFF) {
+        result += value[i] + value[i + 1];
+        i++;
+      } else {
+        result += '\uFFFD';
+      }
+      continue;
+    }
+
+    if (current >= 0xDC00 && current <= 0xDFFF) {
+      result += '\uFFFD';
+      continue;
+    }
+
+    result += value[i];
+  }
+
+  return result;
+}
+
+function normalizeRecipe(recipe: z.infer<typeof RecipeSchema>): z.infer<typeof RecipeSchema> {
+  return {
+    ...recipe,
+    title: normalizeUnicode(recipe.title),
+    description: normalizeUnicode(recipe.description),
+    matchedIngredients: recipe.matchedIngredients.map(normalizeUnicode),
+    ingredients: recipe.ingredients.map((ingredient) => ({
+      ...ingredient,
+      name: normalizeUnicode(ingredient.name),
+      quantity: normalizeUnicode(ingredient.quantity),
+      unit: ingredient.unit === null ? null : normalizeUnicode(ingredient.unit),
+    })),
+  };
+}
+
 export const IngredientSchema = z.object({
   name: z.string(),
   quantity: z.string(),
@@ -45,7 +87,9 @@ async function searchPixabayCandidates(query: string, count = 5): Promise<string
     const data = await res.json() as { hits?: { largeImageURL?: string; webformatURL?: string }[] };
     // webformatURL (capped ~640px) over largeImageURL (capped ~1280px) — these only ever
     // render at card/hero width (a few hundred px), so the large variant was 4x the bytes
-    // for no visible gain, and was the main source of slow image loads.
+    // for no visible gain. Tried dropping cards further to Pixabay's previewURL (~150px)
+    // to save even more bandwidth, but that's a big enough downscale from a full-width
+    // card that it was visibly blurry on real devices — reverted, one size for both.
     return (data.hits ?? [])
       .map(h => h.webformatURL ?? h.largeImageURL)
       .filter((u): u is string => !!u);
@@ -140,6 +184,8 @@ export async function persistRecipes(
   ingredientSetId: string,
   recipes: z.infer<typeof RecipeSchema>[]
 ): Promise<RecipeStub[]> {
+  const normalizedRecipes = recipes.map(normalizeRecipe);
+
   // Avoid handing out an image that's already shown elsewhere in this ingredient set —
   // not just within this batch, since top-ups/genre fetches add more recipes to the
   // same set later and shouldn't repeat what's already been persisted for it.
@@ -153,14 +199,14 @@ export async function persistRecipes(
     .filter((u): u is string => !!u);
 
   const [imageUrls, embeddings] = await Promise.all([
-    fetchRecipeImages(recipes, alreadyUsedImages),
-    embedTexts(recipes.map(r => `${r.title}. ${r.description}`)),
+    fetchRecipeImages(normalizedRecipes, alreadyUsedImages),
+    embedTexts(normalizedRecipes.map(r => `${r.title}. ${r.description}`)),
   ]);
 
   const { data: insertedRecipes, error: recipesErr } = await supabase
     .from('recipes')
     .insert(
-      recipes.map((r, i) => ({
+      normalizedRecipes.map((r, i) => ({
         ingredient_set_id: ingredientSetId,
         title: r.title,
         description: r.description,
@@ -180,7 +226,7 @@ export async function persistRecipes(
   if (recipesErr || !insertedRecipes) throw new Error('Failed to insert recipes: ' + recipesErr?.message);
 
   await supabase.from('recipe_ingredients').insert(
-    recipes.flatMap((r, i) =>
+    normalizedRecipes.flatMap((r, i) =>
       r.ingredients.map(ing => ({
         recipe_id: insertedRecipes[i].id,
         name: ing.name,
@@ -191,7 +237,7 @@ export async function persistRecipes(
     )
   );
 
-  return recipes.map((r, i) => ({
+  return normalizedRecipes.map((r, i) => ({
     id: insertedRecipes[i].id,
     title: r.title,
     cuisine: r.genre,

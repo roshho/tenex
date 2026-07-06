@@ -81,3 +81,11 @@ POST /api/more-recipes	5–15 calls	30	Triggers LLM generation, but a smaller ba
 POST /api/update-ingredients	2–5 calls	20	Same generation path as analyze, smaller batch (10)
 POST /api/lookup-ingredients	2–5 calls	60	Read-only — no generation, just an embedding call + DB read
 GET /api/recipe	10–20 calls	200	Your most-frequent legit call (every card tap); generation only fires once ever per recipe ID, so abuse potential is naturally self-limiting
+
+
+### Todo 
+- image analysis still slow - try to use a faster vision model
+- repeated recipes are showing up - detailed recipe steps seem different, but the recipe names are exactly the same - need to ensure no repetition
+- unsplash or pixabay images are the same - wondering if there's worth in using a different service instead since pixabay noticable slower to load?
+- when you unclick on a tag and the page refreshes, it still shows recipes with the remaining tag 
+- generated recipes seem to force all the ingreidents to be used when that's not necessary

@@ -92,25 +92,41 @@ Return structured JSON.`;
     // the client filters recipes by exact genre match, so this must be exact.
     const candidates = genre ? result.recipes.map(r => ({ ...r, genre })) : result.recipes;
 
-    // Diversity filter: title-based exclusion only stops exact/near-exact repeats. Embed
-    // each candidate and drop any that are semantically too close to a recipe already
-    // shown for this ingredient set — different name for the same dish, different cuisine
-    // label on an identical preparation, etc.
+    // Exact-title filter: the prompt asks the model not to repeat `exclude`, but that's
+    // just an instruction — it still occasionally echoes the same title back (often with
+    // a genuinely different description, which is why the embedding filter below doesn't
+    // reliably catch it). Check against titles actually persisted for this ingredient set,
+    // not just the client-sent `exclude` list, so a title can't slip through because the
+    // client's copy of it was stale or incomplete.
     const [candidateEmbeddings, existingRows] = await Promise.all([
       embedTexts(candidates.map(r => `${r.title}. ${r.description}`)),
-      supabase.from('recipes').select('embedding').eq('ingredient_set_id', ingredientSetId).not('embedding', 'is', null),
+      supabase.from('recipes').select('title, embedding').eq('ingredient_set_id', ingredientSetId),
     ]);
+    const existingTitles = new Set(
+      [...(existingRows.data ?? []).map(r => r.title), ...exclude].map(t => t.trim().toLowerCase())
+    );
     const existingEmbeddings = (existingRows.data ?? [])
       .map(r => parseEmbedding(r.embedding))
       .filter((e): e is number[] => e !== null);
 
-    const diverseRecipes = candidates.filter((_, i) => {
-      const candidate = candidateEmbeddings[i];
+    // Diversity filter: on top of the exact-title check above, embed each remaining
+    // candidate and drop any that are semantically too close to a recipe already shown
+    // for this ingredient set — different name for the same dish, different cuisine label
+    // on an identical preparation, etc.
+    const seenTitles = existingTitles; // also grows below to catch repeats within this same batch
+    const diverseRecipes = candidates.filter((candidate, i) => {
+      const normalizedTitle = candidate.title.trim().toLowerCase();
+      if (seenTitles.has(normalizedTitle)) return false;
+
+      const candidateEmbedding = candidateEmbeddings[i];
       const maxSimilarity = existingEmbeddings.reduce(
-        (max, existing) => Math.max(max, cosineSimilarity(candidate, existing)),
+        (max, existing) => Math.max(max, cosineSimilarity(candidateEmbedding, existing)),
         0
       );
-      return maxSimilarity < RECIPE_DIVERSITY_THRESHOLD;
+      if (maxSimilarity >= RECIPE_DIVERSITY_THRESHOLD) return false;
+
+      seenTitles.add(normalizedTitle);
+      return true;
     });
 
     const survivalRatio = diverseRecipes.length / candidates.length;

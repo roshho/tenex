@@ -30,7 +30,7 @@ export default function App() {
             <Stack.Screen
               name="Landing"
               component={LandingScreen}
-              options={{ headerShown: false }}
+              options={{ headerShown: false, title: 'Smart Recipe Planner' }}
             />
             <Stack.Screen
               name="Camera"

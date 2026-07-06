@@ -36,7 +36,11 @@ async function matchExactFingerprint(supabase: SupabaseClient, fp: string): Prom
   return { ingredientSetId: exactMatch.id, detectedIngredients: exactMatch.ingredients, recipes };
 }
 
-async function matchFuzzyEmbedding(supabase: SupabaseClient, queryEmbedding: number[]): Promise<MatchResult | null> {
+async function matchFuzzyEmbedding(
+  supabase: SupabaseClient,
+  queryEmbedding: number[],
+  candidateFilter?: (ingredients: string[]) => boolean
+): Promise<MatchResult | null> {
   const { data: existingSets } = await supabase
     .from('ingredient_sets')
     .select('id, ingredients, embedding')
@@ -45,6 +49,7 @@ async function matchFuzzyEmbedding(supabase: SupabaseClient, queryEmbedding: num
   let bestMatch: { id: string; ingredients: string[] } | null = null;
   let bestSimilarity = 0;
   for (const set of existingSets ?? []) {
+    if (candidateFilter && !candidateFilter(set.ingredients)) continue;
     const embedding = parseEmbedding(set.embedding);
     if (!embedding) continue;
     const similarity = cosineSimilarity(queryEmbedding, embedding);
@@ -67,6 +72,11 @@ async function matchFuzzyEmbedding(supabase: SupabaseClient, queryEmbedding: num
  * Used when a caller must not trigger a fresh LLM call (e.g. resolving the reduced list
  * after the user removes a detected ingredient), where the only acceptable outcomes are
  * "reuse what's already in the database" or "nothing changes."
+ *
+ * The fuzzy match is restricted to sets whose ingredients are a subset of the query: an
+ * unrestricted match would very likely land back on the set the caller is trying to move
+ * away from (dropping one ingredient out of several barely moves the embedding), silently
+ * reintroducing recipes tied to an ingredient the user just removed.
  */
 export async function findExistingIngredientSet(
   supabase: SupabaseClient,
@@ -75,8 +85,11 @@ export async function findExistingIngredientSet(
   const exact = await matchExactFingerprint(supabase, fingerprint(ingredients));
   if (exact) return exact;
 
+  const normalizedQuery = new Set(ingredients.map(i => i.toLowerCase().trim()));
   const queryEmbedding = await embedText(ingredients.slice().sort().join(', '));
-  return matchFuzzyEmbedding(supabase, queryEmbedding);
+  return matchFuzzyEmbedding(supabase, queryEmbedding, (candidateIngredients) =>
+    candidateIngredients.every(i => normalizedQuery.has(i.toLowerCase().trim()))
+  );
 }
 
 /**
