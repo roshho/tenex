@@ -13,4 +13,4 @@ export const VISION_MODEL = 'xai/grok-4.1-fast-non-reasoning';
 export const TEXT_MODEL = 'openai/gpt-5.4-nano';
 
 // Shared fallback for both call types — already proven to work for vision and text alike.
-export const FALLBACK_MODEL = 'google/gemma-4-31b-it';
+export const FALLBACK_MODEL = 'openai/gpt-5.4-mini';

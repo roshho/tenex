@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { StyleSheet } from 'react-native';
+import { AppState, Platform, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 const videoSource = require('../assets/landing-background.mp4');
@@ -19,6 +19,19 @@ export default function VideoBackground() {
     player.play();
   }, [player]);
 
+  // Android's default SurfaceView-backed VideoView can come back from an app-switch
+  // (multitasking) with its render surface torn down, leaving playback visually stuck
+  // on a stale frame or looping just the first buffered segment. Re-issuing play() on
+  // foreground return resets it. iOS/web don't exhibit this, but the listener is harmless there.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        player.play();
+      }
+    });
+    return () => sub.remove();
+  }, [player]);
+
   return (
     <VideoView
       player={player}
@@ -28,6 +41,7 @@ export default function VideoBackground() {
       contentFit="cover"
       pointerEvents="none"
       playsInline
+      surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
     />
   );
 }

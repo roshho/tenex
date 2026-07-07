@@ -32,7 +32,7 @@ There is no lint or test script/config in this project.
 
 ### Running the backend locally
 
-The API (`api/analyze.ts`, `api/more-recipes.ts`, `api/recipe.ts`, `api/update-ingredients.ts`) is written as Vercel serverless functions. To exercise them locally:
+The API (`api/analyze.ts`, `api/more-recipes.ts`, `api/recipe.ts`, `api/update-ingredients.ts`, `api/lookup-ingredients.ts`) is written as Vercel serverless functions. To exercise them locally:
 
 ```bash
 npx vercel dev      # in one terminal — serves api/*.ts on http://localhost:3000
@@ -43,7 +43,9 @@ npx expo start        # in another terminal — EXPO_PUBLIC_API_URL defaults to 
 
 ### Deployment
 
-Deployed via Vercel (`vercel.json`: `buildCommand: npm run build`). Project is linked (see `.vercel/project.json`); use `npx vercel` / `npx vercel --prod` to deploy. Env vars are managed in the Vercel dashboard and pulled locally via `vercel env pull .env`.
+One Vercel project (`smart-recipe-planner`) serves both the API and the web build of the Expo app — `vercel.json`'s `buildCommand` is `npm run build && npx expo export --platform web` (typecheck, then a static web export to `dist/`, which is `outputDirectory`); a `rewrites` rule sends every non-`/api` path to `dist/index.html` for client-side routing. Project is linked (see `.vercel/project.json`); use `npx vercel` / `npx vercel --prod` to deploy. Env vars are managed in the Vercel dashboard and pulled locally via `vercel env pull .env`.
+
+**A "Ready" deployment can still be completely broken.** If a `vercel --prod` build silently deploys nothing (e.g. from a bad `--prebuilt` cache or a transient remote-build issue), the build log shows a giveaway: `Build Completed in [Nms]` with `N` in the tens of milliseconds, followed by `Skipping cache upload because no files were prepared`. Any real build here (`tsc` + `expo export --platform web`) takes several seconds at minimum. That deploys as `● Ready`, aliases fine, and both the web app and every `/api/*` route 404 — indistinguishable from the outside from a routing or DNS issue. To confirm before or after deploying: `npx vercel pull --yes --environment production && npx vercel build --prod --yes` reproduces the exact remote build locally; check `.vercel/output/functions/` actually contains a `.func` per `api/*.ts` file, and that `vercel deploy --prebuilt --prod`'s upload step reports a realistic file count (hundreds+, not double digits).
 
 ## Architecture
 
@@ -53,10 +55,16 @@ Deployed via Vercel (`vercel.json`: `buildCommand: npm run build`). Project is l
 
 ### Models (`api/_shared/models.ts`)
 
-Single source of truth for every model the backend calls — change models here, not per-file:
-- `VISION_MODEL` (`xai/grok-4.3`) — ingredient identification from the photo only.
-- `TEXT_MODEL` (`openai/gpt-5-nano`) — recipe metadata/step generation; cheap/fast since creativity depth barely matters here.
-- `FALLBACK_MODEL` (`openai/gpt-5.5`) — shared fallback for both vision and text calls if the primary fails.
+Single source of truth for every model the backend calls — change models here, not per-file. These have already been swapped a few times as the AI Gateway's catalog changed; verify against the file rather than trusting this list:
+- `VISION_MODEL` (`xai/grok-4.1-fast-non-reasoning`) — ingredient identification from the photo only; fast/non-reasoning tier since it's narrow structured extraction, not a task that benefits from chain-of-thought.
+- `TEXT_MODEL` (`openai/gpt-5.4-nano`) — recipe metadata/step generation; cheap/fast since creativity depth barely matters here.
+- `FALLBACK_MODEL` (`openai/gpt-5.4-mini`) — shared fallback for both vision and text calls if the primary fails.
+
+### Startup: OTA update gate (`hooks/useAppUpdates.ts`)
+
+`App.tsx` calls `useAppUpdates()` and renders nothing until it resolves. `expo-updates`' default `checkAutomatically` behavior always defers a downloaded update to the *next* cold start regardless of policy — there's no native knob for same-session adoption. This hook explicitly checks → fetches → `Updates.reloadAsync()`s so a published `eas update` takes effect on the very launch that detects it, each network call capped at 5s (`withTimeout`) and any error swallowed so a slow/offline network never blocks startup. Skipped entirely in `__DEV__` or when updates aren't enabled for the build.
+
+Note the corollary: this only matters for **JS-only** changes pushed via `eas update`. Anything that changes native config or build-time-embedded values (`app.json` plugins, `EXPO_PUBLIC_*` env vars baked in via `eas.json`) requires a full `eas build` — an `eas update` will never pick those up no matter how this hook behaves.
 
 ### Screen flow (`App.tsx` stack: Camera → RecipeList → RecipeDetail)
 
@@ -78,6 +86,10 @@ Tops up an already-resolved ingredient set: generates 15 more recipes (10 if a `
 ### `POST /api/update-ingredients` (`api/update-ingredients.ts`)
 
 Called when the user adds an ingredient from `RecipeListScreen`. The UI adds the tag optimistically; this endpoint resolves the full updated ingredient list through the same `findOrCreateIngredientSet` cache path (10 new recipes, min 8) in the background and the results get merged in once ready.
+
+### `POST /api/lookup-ingredients` (`api/lookup-ingredients.ts`)
+
+Read-only counterpart to `update-ingredients`, called when the user *removes* a detected ingredient tag. Uses `findExistingIngredientSet` (`api/_shared/ingredientSets.ts`) — exact fingerprint, then fuzzy embedding match — but never generates: the fuzzy match is restricted to candidate sets whose ingredients are a subset of the (reduced) query, so dropping one ingredient can't silently snap back to the larger set the user just moved away from. Returns `{ matched: false }` on a miss rather than falling back to an LLM call.
 
 ### `GET /api/recipe?id=` (`api/recipe.ts`)
 
@@ -112,4 +124,6 @@ All API handlers use the Supabase **service role** key server-side; there's no c
 ## Notes
 
 - `smart-recipe-planner/AGENTS.md` (linked from `smart-recipe-planner/CLAUDE.md` via `@AGENTS.md`) flags that Expo has changed significantly — consult the versioned docs at `https://docs.expo.dev/versions/v56.0.0/` before writing Expo-specific code rather than relying on training-data knowledge.
-- `EXPO_PUBLIC_API_URL` controls which backend the Expo app talks to; unset it (or point it at `http://localhost:3000`) for local `vercel dev`, or set it to the deployed Vercel URL for production/preview builds.
+- `EXPO_PUBLIC_API_URL` controls which backend the Expo app talks to; unset it (or point it at `http://localhost:3000`) for local `vercel dev`, or set it to the deployed Vercel URL for production/preview builds. It's compiled into the JS bundle at **build time**, not read at runtime — changing it and running `eas update` does nothing to already-installed builds; it only takes effect via a fresh `eas build` (see the `env` block under the `preview` profile in `eas.json`). If a build is inexplicably still hitting the wrong URL, extract the installed app's JS bundle (`unzip -p <apk> assets/index.android.bundle | grep <expected-url>`) to confirm what actually got baked in, rather than trusting the build log.
+- `app.json`'s `plugins` array must list every native module that needs config-time setup — `expo-camera` and `expo-image-picker` (used by `CameraScreen.tsx`) are required there alongside `expo-video`, or the corresponding native permissions/config won't be generated into a new build.
+- `components/VideoBackground.tsx` sets `surfaceType="textureView"` on Android's `VideoView` and re-plays on `AppState` → `'active'`. Android's default `SurfaceView` backing can lose its render surface across an app-switch (multitasking), leaving the looping landing-screen background video stuck on a stale frame or replaying only the first buffered segment until backgrounded/foregrounded again — `textureView` avoids the surface-teardown hazard, the `AppState` listener is a belt-and-suspenders resume.

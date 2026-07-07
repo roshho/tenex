@@ -3,7 +3,10 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "channel": "preview"
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://smart-recipe-planner.vercel.app"
+      }
     }
   }
 }

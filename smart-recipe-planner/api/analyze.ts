@@ -99,6 +99,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const { object: identified } = await identifyIngredientsWithFallback(imageBuffer);
     console.log('[ANALYZE] Detected', identified.detectedIngredients.length, 'ingredients, tooDark =', identified.imageTooDark);
 
+    // An empty list can't be embedded (the embeddings API rejects an empty-string input)
+    // and isn't a real ingredient set anyway — surface it as a normal "couldn't identify
+    // anything" failure rather than letting it crash further down in embedding/fuzzy-match.
+    if (identified.detectedIngredients.length === 0) {
+      return res.status(422).json({ error: 'No ingredients could be identified in that photo' });
+    }
+
     // Step 3: find-or-create the ingredient set (exact fingerprint match, fuzzy
     // embedding match against past scans, or generate 20 fresh recipes).
     const result = await findOrCreateIngredientSet(supabase, identified.detectedIngredients, 20, 18, imageHash);

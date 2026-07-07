@@ -9,11 +9,15 @@ import RecipeListScreen from './screens/RecipeListScreen';
 import RecipeDetailScreen from './screens/RecipeDetailScreen';
 import { RootStackParamList } from './types';
 import { colors } from './constants/theme';
+import { useAppUpdates } from './hooks/useAppUpdates';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const queryClient = new QueryClient();
 
 export default function App() {
+  const updatesReady = useAppUpdates();
+  if (!updatesReady) return null;
+
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
