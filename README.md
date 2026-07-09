@@ -4,7 +4,8 @@ Photograph the ingredients you have. Get 5 structured, ready-to-cook recipes bac
 
 Built as an engineering take-home assignment (see [`Engineering Take-Home Assignment.pdf`](./Engineering%20Take-Home%20Assignment.pdf) for the original brief). All engineering work lives in [`smart-recipe-planner/`](./smart-recipe-planner).
 
-**Live app:** https://smart-recipe-planner.vercel.app
+**Live app:** smart-recipe-planner-2pgf3wru3-smart-recipes-projects.vercel.app
+**Android Expo Build:** https://expo.dev/accounts/moonlit9349/projects/smart-recipe-planner/builds/35deec7e-708e-4d74-bf13-18eed03a71b6
 
 ## Contents
 
